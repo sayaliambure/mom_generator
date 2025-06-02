@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meeting Assistant</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        .notification {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 9999;
+            display: none;
+        }
+        #summary {
+            border: 1px solid #ccc;
+            padding: 10px;
+            border-radius: 5px;
+            background: #f8f9fa;
+        }
+        #summary[contenteditable="true"] {
+            border: 2px solid #007bff;
+            background: #e9f5ff;
+        }
+        .button-container {
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <h1 class="text-center mb-4">Summarize Meetings</h1>
+
+        <!-- Upload Section -->
+        <div class="mb-4">
+            <label for="fileInput" class="form-label">Upload Meeting Recording</label>
+            <input class="form-control" type="file" id="fileInput">
+            <button class="btn btn-primary mt-2" id="uploadButton">Generate Transcript</button>
+        </div>
+
+        <!-- Notifications -->
+        <div class="alert alert-info notification" id="notificationBox"></div>
+
+        <!-- Transcript Section -->
+        <div class="mb-4">
+            <h5>Transcript</h5>
+            <textarea class="form-control" id="transcript" rows="10" readonly></textarea>
+            <button class="btn btn-secondary mt-2" id="downloadTranscript">Download Transcript</button>
+        </div>
+
+        <!-- Summary Section -->
+        <div class="mb-4">
+            <h5>Summary</h5>
+            <div id="summary" contenteditable="false"></div>
+            <div class="button-container mt-2">
+                <button class="btn btn-primary" id="generateSummary">Generate Summary</button>
+                <button class="btn btn-secondary" id="editSummary">Edit Summary</button>
+                <button class="btn btn-secondary" id="downloadSummary">Download Summary</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showNotification(message) {
+            const notificationBox = $('#notificationBox');
+            notificationBox.text(message);
+            notificationBox.fadeIn();
+
+            setTimeout(() => {
+                notificationBox.fadeOut();
+            }, 3000);
+        }
+
+        $(document).ready(() => {
+            $('#uploadButton').click(() => {
+                const fileInput = $('#fileInput')[0];
+                if (!fileInput.files.length) {
+                    showNotification('Please select a file to upload.');
+                    return;
+                }
+
+                const file = fileInput.files[0];
+                const formData = new FormData();
+                formData.append('file', file);
+
+                showNotification('Generating Transcript...');
+                $.ajax({
+                    url: '/upload',
+                    type: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: (response) => {
+                        showNotification('Generating transcript...');
+                        $('#transcript').val(response.transcript);
+                        showNotification('Transcript generated successfully.');
+                    },
+                    error: () => {
+                        showNotification('Error generating transcript.');
+                    }
+                });
+            });
+
+            $('#generateSummary').click(() => {
+                const transcript = $('#transcript').val();
+                if (!transcript) {
+                    showNotification('Please generate a transcript first.');
+                    return;
+                }
+
+                showNotification('Generating summary...');
+                $.ajax({
+                    url: '/summarize',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ transcript }),
+                    success: (response) => {
+                        $('#summary').text(response.summary);
+                        showNotification('Summary generated successfully.');
+                    },
+                    error: () => {
+                        showNotification('Error generating summary.');
+                    }
+                });
+            });
+
+            $('#editSummary').click(() => {
+                const summaryDiv = $('#summary');
+                if (summaryDiv.attr('contenteditable') === 'true') {
+                    summaryDiv.attr('contenteditable', 'false');
+                    showNotification('Summary editing disabled.');
+                } else {
+                    summaryDiv.attr('contenteditable', 'true');
+                    showNotification('Summary is now editable.');
+                }
+            });
+
+            $('#downloadTranscript').click(() => {
+                const transcriptFile = $('#transcript').val();
+                if (!transcriptFile) {
+                    showNotification('No transcript available to download.');
+                    return;
+                }
+
+                const blob = new Blob([transcriptFile], { type: 'text/plain' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = 'transcript.txt';
+                link.click();
+            });
+
+            $('#downloadSummary').click(() => {
+                const summaryText = $('#summary').text();
+                if (!summaryText) {
+                    showNotification('No summary available to download.');
+                    return;
+                }
+
+                const blob = new Blob([summaryText], { type: 'text/plain' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = 'summary.txt';
+                link.click();
+            });
+        });
+    </script>
+</body>
+</html>
