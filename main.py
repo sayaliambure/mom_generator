@@ -1,1 +1,0 @@
-print('Minutes of meeting generator')
