@@ -3,15 +3,17 @@ import threading
 from RealtimeSTT import AudioToTextRecorder
 
 stop_flag = threading.Event() # A flag to signal the transcription thread to stop
-# recorder = None
-# transcription_thread = None
+recorder = None
+transcription_thread = None
+# Global variable to store the latest real-time transcript
+# realtime_transcript = ""
 # recording_duration = 30  # seconds
 
 def process_text(text):
-    global realtime_transcript
+    # global realtime_transcript
     print(f"Realtime Transcription: {text}")
     # Append or update the global transcript
-    realtime_transcript += text + "\n"
+    # realtime_transcript += text + "\n"
 
 def start_realtime_transcription_loop():
     global recorder

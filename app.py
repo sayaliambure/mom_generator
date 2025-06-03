@@ -16,10 +16,10 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 stop_flag = threading.Event() # A flag to signal the transcription thread to stop
-print('App ready')
+recorder = None
+transcription_thread = None
+print('App started')
 
-# Global variable to store the latest real-time transcript
-realtime_transcript = ""
 
 @app.route('/')
 def index():
@@ -150,10 +150,10 @@ def stop_stt():
     else:
         return jsonify({"message": "Real-time transcription is not running."}), 200
 
-@app.route('/get_realtime_transcript', methods=['GET'])
-def get_realtime_transcript():
-    global realtime_transcript
-    return jsonify({"transcript": realtime_transcript})
+# @app.route('/get_realtime_transcript', methods=['GET'])
+# def get_realtime_transcript():
+#     global realtime_transcript
+#     return jsonify({"transcript": realtime_transcript})
 
 if __name__ == '__main__':
     app.run(debug=True)
