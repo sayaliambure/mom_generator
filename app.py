@@ -1,14 +1,10 @@
 from flask import Flask, request, render_template, jsonify, send_file
-import os, time
+import os, uuid
 from werkzeug.utils import secure_filename
-import whisper  # Placeholder for Whisper model
-from faster_whisper import WhisperModel
-from transformers import pipeline  # Hugging Face for summarization
-import soundfile as sf
-import librosa, uuid, torch
-from transformers import BartTokenizer, BartForConditionalGeneration
-from RealtimeSTT import AudioToTextRecorder
 import threading
+from transcript_gen import generate_transcript, generate_transcript_faster_whisper
+from real_time_transcript import start_realtime_transcription_loop
+from summarizer import summarize_long_text
 
 app = Flask(__name__)
 
@@ -18,26 +14,12 @@ OUTPUT_FOLDER = 'outputs'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-recorder = None
-transcription_thread = None
-# recording_duration = 30  # seconds
+
 stop_flag = threading.Event() # A flag to signal the transcription thread to stop
+print('App ready')
 
 # Global variable to store the latest real-time transcript
 realtime_transcript = ""
-
-transcription_whisper_model = whisper.load_model("base")
-faster_whisper_model = WhisperModel("base", device="cpu", compute_type="float32")
-
-
-# Load models
-# transcription_model = whisper.load_model("base")  # Placeholder for Whisper model
-# summarizer = pipeline("summarization", model="facebook/bart-large-cnn")  # Placeholder summarizer
-model_name = "facebook/bart-large-cnn"
-tokenizer = BartTokenizer.from_pretrained(model_name)
-model = BartForConditionalGeneration.from_pretrained(model_name).to("cpu")
-
-print('App ready')
 
 @app.route('/')
 def index():
@@ -131,170 +113,6 @@ def download_file(filename):
         return send_file(filepath, as_attachment=True)
     return jsonify({"error": "File not found"}), 404
 
-# Helper functions
-def preprocess_audio(filepath, target_sr=16000, chunk_duration=30):
-    """
-    Preprocess audio by resampling and splitting into chunks.
-    """
-    audio, sr = librosa.load(filepath, sr=None)  # Load with original sampling rate
-    if sr != target_sr:
-        audio = librosa.resample(audio, orig_sr=sr, target_sr=target_sr)
-        sr = target_sr
-
-    chunk_samples = int(sr * chunk_duration)  # Number of samples per chunk
-    audio_chunks = [audio[i:i + chunk_samples] for i in range(0, len(audio), chunk_samples)]
-
-    return audio_chunks, sr
-
-# def generate_transcript(filepath):
-    """
-    Generate transcript by splitting audio into chunks.
-    """
-    audio_chunks, sr = preprocess_audio(filepath)
-    transcript = ""
-
-    for i, chunk in enumerate(audio_chunks):
-        temp_filename = f"temp_chunk_{i}.wav"
-        temp_filepath = os.path.join(app.config['UPLOAD_FOLDER'], temp_filename)
-
-        # Save the chunk as a temporary file
-        sf.write(temp_filepath, chunk, sr)
-
-        # Transcribe the chunk
-        result = transcription_whisper_model.transcribe(temp_filepath)
-        transcript += result['text'] + " "
-
-        # Clean up temporary file
-        os.remove(temp_filepath)
-
-    return transcript.strip()
-
-# def generate_summary(text):
-    summary = summarizer(text, max_length=150, min_length=30, do_sample=False)
-    return summary[0]['summary_text']
-
-def generate_transcript(filepath):
-    """
-    Generate transcript using Whisper model, processing audio in-memory.
-    """
-    start_time = time.time()
-    try:
-        result = transcription_whisper_model.transcribe(filepath)
-        end_time = time.time()
-        transcription_time = end_time - start_time
-        return result["text"], transcription_time
-    except Exception as e:
-        return f"Error during Whisper transcription: {e}"
-
-
-def generate_transcript_faster_whisper(audio_filepath):
-    """Generates transcript using the faster-whisper model."""
-    start_time = time.time()
-    try:
-        segments, info = faster_whisper_model.transcribe(audio_filepath, beam_size=5)
-        full_transcript = ""
-        for segment in segments:
-            full_transcript += segment.text + " "
-        end_time = time.time()
-        transcription_time = end_time - start_time
-        return full_transcript.strip(), transcription_time
-    except Exception as e:
-        return f"Error during faster-whisper transcription: {e}"
-    
-
-
-def split_text_into_chunks(text, max_tokens, tokenizer):
-    """
-    Splits text into chunks that fit within the model's token limit.
-    """
-    tokens = tokenizer.tokenize(text)
-    chunks = []
-    for i in range(0, len(tokens), max_tokens):
-        chunk = tokens[i:i + max_tokens]
-        chunks.append(tokenizer.convert_tokens_to_string(chunk))
-    return chunks
-
-def summarize_chunk(chunk, max_length=500, min_length=100):
-    """
-    Summarizes a chunk of text using the BART model.
-    """
-    # Combine system input and user input into a prompt
-    # prompt = f"{system_input}\n\nUser Input: {chunk}"
-
-    # Tokenize the input
-    inputs = tokenizer(chunk, return_tensors="pt", max_length=1024, truncation=True).to("cpu")
-
-    # Generate the summary
-    outputs = model.generate(
-        inputs["input_ids"],
-        max_length=max_length,
-        min_length=min_length,
-        length_penalty=2.0,
-        num_beams=4,
-        early_stopping=True
-    )
-
-    # Decode and return the summary
-    summary = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    return summary
-
-def summarize_long_text(text, max_chunk_tokens=1024, hierarchical_pass=True):
-    """
-    Splits long text into chunks, summarizes each chunk, and optionally combines 
-    chunk summaries into a final coherent summary.
-    """
-    # Ensure max_chunk_tokens is an integer
-    # if not isinstance(max_chunk_tokens, int):
-    #     max_chunk_tokens = int(max_chunk_tokens)
-
-    # Step 1: Split text into manageable chunks
-    chunks = split_text_into_chunks(text, max_chunk_tokens, tokenizer)
-    chunk_summaries = []
-
-    # Step 2: Summarize each chunk
-    for i, chunk in enumerate(chunks):
-        print(f"Processing chunk {i+1}/{len(chunks)}...")
-        summary = summarize_chunk(chunk)
-        chunk_summaries.append(summary)
-
-    # Step 3: Combine chunk summaries and optionally summarize them again
-    combined_summary = " ".join(chunk_summaries)
-    if hierarchical_pass:
-        print("Running a final pass for coherence...")
-        combined_summary = summarize_chunk(combined_summary, max_length=300, min_length=100)
-
-    return combined_summary
-
-
-
-
-def process_text(text):
-    global realtime_transcript
-    print(f"Realtime Transcription: {text}")
-    # Append or update the global transcript
-    realtime_transcript += text + "\n"
-
-def start_realtime_transcription_loop():
-    global recorder
-    global transcription_thread
-    try:
-        recorder = AudioToTextRecorder()
-        # Loop indefinitely until the stop_flag is set
-        while not stop_flag.is_set():
-            recorder.text(process_text)
-            # Add a small sleep to prevent busy-waiting if recorder.text() is very fast
-            # and doesn't yield control, though typically it will block until text is available.
-            time.sleep(0.1)
-        print("Real-time transcription stopped by API request.")
-    except Exception as e:
-        print(f"Error in realtime transcription: {e}")
-    finally:
-        # Ensure resources are cleaned up whether stopped by API or error
-        if recorder:
-            recorder.stop()
-        recorder = None
-        transcription_thread = None
-        stop_flag.clear() # Clear the flag for the next run
 
 @app.route('/start_realtime_transcription', methods=['POST'])
 def start_stt():
