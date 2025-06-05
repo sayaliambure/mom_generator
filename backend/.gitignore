@@ -1,0 +1,7 @@
+/uploads
+/outputs
+/transcripts
+realtimesst.log
+compare.txt
+testing_functions.py
+/__pycache__
