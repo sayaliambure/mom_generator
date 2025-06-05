@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import axios from 'axios';
-import { PencilSquareIcon, XMarkIcon } from "@heroicons/react/24/solid";
+import { ArrowDownTrayIcon, XMarkIcon, 
+  MicrophoneIcon, StopIcon, EyeIcon, EyeSlashIcon } from "@heroicons/react/24/solid";
 
 const MeetingMinutesGenerator = () => {
   const [mode, setMode] = useState(""); // "upload" or "record"
@@ -8,6 +9,7 @@ const MeetingMinutesGenerator = () => {
   const [meetingTitle, setMeetingTitle] = useState("");
   const [meetingDate, setMeetingDate] = useState("");
   const [attendees, setAttendees] = useState("");
+  const [meetingAgenda, setAgenda] = useState("");
   const [transcript, setTranscript] = useState("");
   const [liveTranscript, setLiveTranscript] = useState("");
   const [isRecording, setIsRecording] = useState(false);
@@ -22,8 +24,12 @@ const MeetingMinutesGenerator = () => {
   const [generatingActions, setGeneratingActions] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [notes, setNotes] = useState('');
+  const [editableTranscript, setEditableTranscript] = useState("");
+  const [editableSummary, setEditableSummary] = useState("");
+  const [editableActionItems, setEditableActionItems] = useState("");
 
   const previousTranscriptRef = useRef(""); // Used to track the last live segment
+  const seenLinesRef = useRef(new Set());
 
   useEffect(() => {
     let interval;
@@ -33,6 +39,19 @@ const MeetingMinutesGenerator = () => {
     return () => clearInterval(interval);
   }, [isLive]);
 
+  useEffect(() => {
+    setEditableTranscript(transcript || transcriptText || "");
+  }, [transcript, transcriptText]);
+  
+  useEffect(() => {
+    setEditableSummary(summary);
+  }, [summary]);
+  
+  useEffect(() => {
+    setEditableActionItems(actionItems);
+  }, [actionItems]);
+  
+
   const fetchLiveTranscript = async () => {
     try {
       const res = await fetch("http://127.0.0.1:5000/get_live_transcript");
@@ -40,10 +59,16 @@ const MeetingMinutesGenerator = () => {
       console.log(data.text, 'live transcript');
       const newText = data.text.trim();
 
-      // Append only if the new segment is different
-      if (newText && newText !== previousTranscriptRef.current) {
-        setLiveTranscript((prev) => prev + "\n" + newText);
-        previousTranscriptRef.current = newText; // Update the reference
+      if (!newText) return;
+      const newLines = newText.split('\n').map(line => line.trim()).filter(Boolean);
+      const uniqueNewLines = newLines.filter(line => !seenLinesRef.current.has(line));
+      if (uniqueNewLines.length > 0) {
+        // const timestampedLines = uniqueNewLines.map(
+        //   line => `[${new Date().toLocaleTimeString()}] ${line}`
+        // );
+        // setLiveTranscript(prev => prev + "\n" + timestampedLines.join("\n"));
+        setLiveTranscript(prev => prev + "\n" + uniqueNewLines.join("\n"));
+        uniqueNewLines.forEach(line => seenLinesRef.current.add(line));
       }
 
     } catch (err) {
@@ -89,6 +114,7 @@ const MeetingMinutesGenerator = () => {
         setIsRecording(true);
         setLiveTranscript(""); // Reset
         previousTranscriptRef.current = "";
+        seenLinesRef.current = new Set(); // Reset seen lines
       } else {
         alert("Failed to start live transcription");
       }
@@ -169,6 +195,29 @@ const MeetingMinutesGenerator = () => {
       setGeneratingActions(false);
     }
   };
+
+  const DownloadButton = ({ content, filename }) => {
+    const handleDownload = () => {
+      const element = document.createElement("a");
+      const file = new Blob([content], { type: "text/plain" });
+      element.href = URL.createObjectURL(file);
+      element.download = filename;
+      document.body.appendChild(element); // required for Firefox
+      element.click();
+      document.body.removeChild(element);
+    };
+  
+    return (
+      <button
+        onClick={handleDownload}
+        className="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+      >
+        <ArrowDownTrayIcon className="h-5 w-5" />
+        {/* Download */}
+      </button>
+    );
+  };
+  
   
   
 
@@ -202,27 +251,59 @@ const MeetingMinutesGenerator = () => {
       )}
 
       {mode === "record" && (
-        <div className="mb-6 text-center">
+        <div className="flex flex-col items-center mb-6 space-y-4">
           {!isRecording ? (
-              <button onClick={startRecording} className="bg-blue-500 text-white px-4 py-2 rounded">Start Recording</button>
-            ) : (
-              <div className="space-x-2">
-                <button onClick={stopRecording} className="bg-red-500 text-white px-4 py-2 rounded">Stop Recording</button>
-                {!showLive ? (
-                  <button onClick={startLiveTranscript} className="bg-green-500 text-white px-4 py-2 rounded">Show Live Transcript</button>
-                ) : (
-                  <button onClick={stopLiveTranscript} className="bg-yellow-500 text-white px-4 py-2 rounded">Stop Showing Live</button>
-                )}
+            <button
+              onClick={startRecording}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition"
+            >
+              <MicrophoneIcon className="h-5 w-5" />
+              Start Recording
+            </button>
+          ) : (
+            <div className="flex flex-col sm:flex-row sm:space-x-4 space-y-2 sm:space-y-0">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={stopRecording}
+                  className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded transition"
+                >
+                  <StopIcon className="h-5 w-5" />
+                  Stop Recording
+                </button>
               </div>
-            )}
 
-          {showLive && (
-            <div className="bg-gray-100 p-4 rounded shadow max-h-48 overflow-y-auto whitespace-pre-wrap">
-              {liveTranscript || 'Listening...'}
-            </div>
+        <div className="flex items-center gap-2">
+          {!showLive ? (
+            <button
+              onClick={startLiveTranscript}
+              className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded transition"
+            >
+              <EyeIcon className="h-5 w-5" />
+              Show Live Transcript
+            </button>
+          ) : (
+            <button
+              onClick={stopLiveTranscript}
+              className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded transition"
+            >
+              <EyeSlashIcon className="h-5 w-5" />
+              Stop Live Transcript
+            </button>
           )}
         </div>
-      )}
+      </div>
+    )}
+
+    {showLive && (
+      <div className="w-full max-w-3xl px-4">
+        <h2 className="text-lg font-semibold text-gray-700 mb-2 text-center">Live Transcript</h2>
+        <div className="bg-white p-4 rounded-lg shadow-md border border-gray-200 max-h-64 overflow-y-auto whitespace-pre-wrap text-left text-sm text-gray-800">
+          {liveTranscript || 'Listening...'}
+        </div>
+      </div>
+    )}
+  </div>
+)}
 
       <input
         type="text"
@@ -242,7 +323,15 @@ const MeetingMinutesGenerator = () => {
         value={attendees}
         onChange={(e) => setAttendees(e.target.value)}
         className="w-full border rounded p-2 mb-4"
-        rows={2}
+        rows={1}
+      />
+
+      <textarea
+        placeholder="Meeting Agenda"
+        value={meetingAgenda}
+        onChange={(e) => setAgenda(e.target.value)}
+        className="w-full border rounded p-2 mb-4"
+        rows={3}
       />
 
       {mode === "upload" ? (
@@ -263,20 +352,23 @@ const MeetingMinutesGenerator = () => {
       </button>
       )}
 
-      {mode === "upload" ? (
-        transcript && (
-          <div className="mt-8 bg-gray-100 p-4 rounded">
-            <h2 className="text-xl font-semibold mb-2">Meeting Transcript</h2>
-            <p className="whitespace-pre-wrap">{transcript}</p>
+
+
+      {(editableTranscript || transcriptText) && (
+        <div className="mt-8 bg-gray-100 p-4 rounded">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-xl font-semibold">Meeting Transcript</h2>
+            <div className="mt-2">
+                <DownloadButton content={transcript} filename="transcript.txt" />
+              </div>
           </div>
-        )
-      ) : (
-        transcriptText && (
-          <div className="mt-8 bg-gray-100 p-4 rounded">
-            <h2 className="text-xl font-semibold mb-2">Meeting Transcript</h2>
-            <pre className="whitespace-pre-wrap">{transcriptText}</pre>
-          </div>
-        )
+          <textarea
+            value={editableTranscript}
+            onChange={(e) => setEditableTranscript(e.target.value)}
+            className="w-full p-2 border rounded whitespace-pre-wrap"
+            rows={10}
+          />
+        </div>
       )}
 
 
@@ -284,7 +376,7 @@ const MeetingMinutesGenerator = () => {
         <div className="mt-6 flex gap-4">
           <button
             onClick={handleGenerateSummary}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+            className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-800"
             disabled={generatingSummary}
           >
             {generatingSummary ? "Generating summary..." : "Generate Summary"}
@@ -292,7 +384,7 @@ const MeetingMinutesGenerator = () => {
 
           <button
             onClick={handleGenerateActionItems}
-            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+            className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-800"
             disabled={generatingActions}
           >
             {generatingActions ? "Generating action items..." : "Generate Action Items"}
@@ -302,15 +394,35 @@ const MeetingMinutesGenerator = () => {
 
       {summary && (
         <div className="mt-6 bg-gray-50 p-4 border rounded">
-          <h2 className="text-xl font-semibold mb-2">Summary</h2>
-          <p className="whitespace-pre-wrap">{summary}</p>
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-xl font-semibold">Summary</h2>
+              <div className="mt-2">
+                <DownloadButton content={summary} filename="summary.txt" />
+              </div>
+          </div>
+          <textarea
+            value={editableSummary}
+            onChange={(e) => setEditableSummary(e.target.value)}
+            className="w-full p-2 border rounded whitespace-pre-wrap"
+            rows={6}
+          />
         </div>
       )}
 
       {actionItems && (
         <div className="mt-6 bg-gray-50 p-4 border rounded">
-          <h2 className="text-xl font-semibold mb-2">Action Items</h2>
-          <p className="whitespace-pre-wrap">{actionItems}</p>
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-xl font-semibold">Action Items</h2>
+            <div className="mt-2">
+              <DownloadButton content={actionItems} filename="action_items.txt" />
+            </div>
+          </div>
+          <textarea
+            value={editableActionItems}
+            onChange={(e) => setEditableActionItems(e.target.value)}
+            className="w-full p-2 border rounded whitespace-pre-wrap"
+            rows={6}
+          />
         </div>
       )}
 
