@@ -5,3 +5,4 @@ realtimesst.log
 compare.txt
 testing_functions.py
 /__pycache__
+.env

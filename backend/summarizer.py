@@ -1,6 +1,8 @@
 from transformers import BartTokenizer, BartForConditionalGeneration
 from transformers import pipeline
 import re 
+import torch
+device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 
 # Load models
 # summarizer = pipeline("summarization", model="facebook/bart-large-cnn")  # Placeholder summarizer
@@ -22,6 +24,7 @@ def split_text_into_chunks(text, max_tokens, tokenizer):
 
 def summarize_chunk(chunk, max_length=500, min_length=100):
     """
+    Model running on local 
     Summarizes a chunk of text using the BART model.
     """
     # Combine system input and user input into a prompt

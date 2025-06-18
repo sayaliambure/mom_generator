@@ -1,8 +1,18 @@
-import time
-import librosa
-import whisper
+import time, os, tempfile
+import librosa, whisper
 import soundfile as sf
 from faster_whisper import WhisperModel
+from pyannote.audio import Pipeline
+from pydub import AudioSegment
+
+import torch
+device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+
+HUGGINGFACE_API_TOKEN = os.getenv("HUGGINGFACE_API_TOKEN")
+# Initialize the diarization pipeline
+diarization_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1",
+                                                use_auth_token=HUGGINGFACE_API_TOKEN)  # replace with your Hugging Face token
+diarization_pipeline.to(device)
 
 recorder = None
 transcription_thread = None
@@ -53,8 +63,49 @@ def preprocess_audio(filepath, target_sr=16000, chunk_duration=30):
     summary = summarizer(text, max_length=150, min_length=30, do_sample=False)
     return summary[0]['summary_text']
 
+
+def diarize_and_transcribe(filepath):
+    start_time = time.time()
+    # Step 1: Diarization
+    diarization = diarization_pipeline(filepath)
+    print("Diarization complete")
+
+    # Step 2: Load audio for segmentation
+    audio = AudioSegment.from_file(filepath)
+    
+    speaker_transcripts = []
+    for turn, _, speaker in diarization.itertracks(yield_label=True):
+        segment = audio[turn.start * 1000: turn.end * 1000]  # milliseconds
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio_file:
+            segment.export(temp_audio_file.name, format="wav")
+            temp_audio_path = temp_audio_file.name
+
+        # Step 3: Transcribe the segment using Whisper
+        try:
+            result = transcription_whisper_model.transcribe(temp_audio_path)
+            speaker_transcripts.append({
+                "speaker": speaker,
+                "start": turn.start,
+                "end": turn.end,
+                "text": result['text']
+            })
+        except Exception as e:
+            speaker_transcripts.append({
+                "speaker": speaker,
+                "start": turn.start,
+                "end": turn.end,
+                "text": f"Error: {e}"
+            })
+
+    end_time = time.time()
+    transcription_time = end_time - start_time
+    return speaker_transcripts, transcription_time
+
+
+
 def generate_transcript(filepath):
     """
+    Uses model running on local
     Generate transcript using Whisper model, processing audio in-memory.
     """
     start_time = time.time()

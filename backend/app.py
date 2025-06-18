@@ -2,10 +2,13 @@ from flask import Flask, request, render_template, jsonify, send_file, Response
 import os, uuid
 from werkzeug.utils import secure_filename
 import threading
-from transcript_gen import generate_transcript, generate_transcript_faster_whisper
+from transcript_gen import generate_transcript, generate_transcript_faster_whisper, diarize_and_transcribe
 from real_time_transcript import start_realtime_transcription_loop, get_realtime_transcript_queue
 from summarizer import summarize_long_text, extract_action_items
 from flask_cors import CORS
+import torch
+print('GPU on mac? ', torch.backends.mps.is_available())  # True = Apple GPU available
+
 
 app = Flask(__name__)
 CORS(app, origins=['http://localhost:3000'])
@@ -49,17 +52,28 @@ def transcribe():
 
     # Generate transcript
     print('transcipt being generated...')
-    transcript, transcription_time = generate_transcript(filepath)
+    speaker_transcripts, transcription_time = diarize_and_transcribe(filepath)
     print('generated transcript !!')
+    combined_transcript = "\n".join(
+    [f"[{seg['speaker']} - {seg['start']:.2f}s to {seg['end']:.2f}s]: {seg['text']}" for seg in speaker_transcripts])
 
     # Save transcript to file
     transcript_filename = f"transcript_{uuid.uuid4()}.txt"
     # transcript_filename = f"transcript_{os.path.splitext(filename)[0]}.txt"
     transcript_filepath = os.path.join(OUTPUT_FOLDER, transcript_filename)
     with open(transcript_filepath, 'w', encoding='utf-8') as f:
-        f.write(transcript)
+        # f.write(speaker_transcripts)
+        for segment in speaker_transcripts:
+            f.write(f"[{segment['speaker']} - {segment['start']:.2f}s to {segment['end']:.2f}s]: {segment['text']}\n")
+
     print("written and saved transcript file")
-    return jsonify({"transcript": transcript, "transcript_file": transcript_filename, "model": "whisper", "transcription time": transcription_time})
+    return jsonify({
+        "transcript": combined_transcript,
+        "speaker_segments": speaker_transcripts,
+        "transcript_file": transcript_filename, 
+        "model": "whisper + diarization", 
+        "transcription time": transcription_time
+        })
 
 
 # using faster-whisper model
@@ -131,7 +145,7 @@ def action_items():
 def download_file(filename):
     filepath = os.path.join(OUTPUT_FOLDER, filename)
     if os.path.exists(filepath):
-        return send_file(filepath, as_attachment=True)
+        return send_file(filepath, as_attachment=True, mimetype='application/pdf')
     return jsonify({"error": "File not found"}), 404
 
 
