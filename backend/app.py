@@ -195,7 +195,7 @@ def scoring_mechanism():
     data = request.json
     transcript = data.get("transcript")
     agenda = data.get("agenda")
-    if not transcript or agenda:
+    if not transcript or not agenda:
         return jsonify({"error": "No transcript or agenda provided"}), 400
     print("Generating Meeting Score...")
     task_prompt = "Give a score on how well the meeting was aligned with the agenda."
