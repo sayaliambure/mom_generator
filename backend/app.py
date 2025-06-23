@@ -1,32 +1,43 @@
-from flask import Flask, request, render_template, jsonify, send_file, Response
-import os, uuid
+from flask import Flask, request, render_template, jsonify, send_file, send_from_directory
+import requests
+import os, uuid, time
+import soundfile as sf
+import numpy as np
 from werkzeug.utils import secure_filename
 import threading
-from transcript_gen import generate_transcript, generate_transcript_faster_whisper, diarize_and_transcribe
-from real_time_transcript import start_realtime_transcription_loop, get_realtime_transcript_queue
-from summarizer import summarize_long_text, extract_action_items
+from transcript_gen import generate_transcript_faster_whisper, diarize_and_transcribe, speaker_rec_and_transcribe
+from custom_transcriber import CustomTranscriber
+from datetime import datetime
+from summarizer import summarize_long_text
+# from action_items import generate_action_items
+from llm_generate import query_nvidia_model, query_nvidia_scoring_model
 from flask_cors import CORS
 import torch
 print('GPU on mac? ', torch.backends.mps.is_available())  # True = Apple GPU available
 
 
 app = Flask(__name__)
-CORS(app, origins=['http://localhost:3000'])
+# CORS(app, origins=['http://localhost:3000'])
+CORS(app)
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
 OUTPUT_FOLDER = 'outputs'
+LIVE_TRANSCRIPT_FOLDER = 'live_transcripts'
+LIVE_RECORDED_MEET_FOLDER = 'live_recorded_meet_audio'
+VOICE_SAMPLES = 'voice_samples'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+os.makedirs(LIVE_TRANSCRIPT_FOLDER, exist_ok=True)
+os.makedirs(LIVE_RECORDED_MEET_FOLDER, exist_ok=True)
+os.makedirs(VOICE_SAMPLES, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-TRANSCRIPT_FILE_PATH = "transcripts/live_transcript.txt"
-os.makedirs("transcripts", exist_ok=True)
-
+print(f"Can write to folder: {os.access(LIVE_RECORDED_MEET_FOLDER, os.W_OK)}")
 
 stop_flag = threading.Event() # A flag to signal the transcription thread to stop
-recorder = None
 transcription_thread = None
+transcriber = None
 print('App started')
 
 
@@ -50,19 +61,30 @@ def transcribe():
     file.save(filepath)
     print('file saved successfully')
 
-    # Generate transcript
-    print('transcipt being generated...')
-    speaker_transcripts, transcription_time = diarize_and_transcribe(filepath)
-    print('generated transcript !!')
-    combined_transcript = "\n".join(
-    [f"[{seg['speaker']} - {seg['start']:.2f}s to {seg['end']:.2f}s]: {seg['text']}" for seg in speaker_transcripts])
+    # Check if speaker identification is requested
+    speaker_identification = request.form.get('speaker_identification') == 'true'
 
-    # Save transcript to file
+    if speaker_identification:
+        attendee_names = request.form.getlist('attendee_names')
+        samples = request.files.getlist('samples')
+        if len(attendee_names) != len(samples):
+            return jsonify({"error": "Mismatch in number of names and samples"}), 400
+        for name, sample in zip(attendee_names, samples):
+            sample_filename = secure_filename(f"{name}.wav")
+            sample_path = os.path.join(VOICE_SAMPLES, sample_filename)
+            sample.save(sample_path)
+            print(f"Saved sample for {name} at {sample_path}")
+        speaker_transcripts, transcription_time = speaker_rec_and_transcribe(filepath)
+
+    else:
+        speaker_transcripts, transcription_time = diarize_and_transcribe(filepath)
+
+    combined_transcript = "\n".join(
+        [f"[{seg['speaker']} - {seg['start']:.2f}s to {seg['end']:.2f}s]: {seg['text']}" for seg in speaker_transcripts])
+
     transcript_filename = f"transcript_{uuid.uuid4()}.txt"
-    # transcript_filename = f"transcript_{os.path.splitext(filename)[0]}.txt"
     transcript_filepath = os.path.join(OUTPUT_FOLDER, transcript_filename)
     with open(transcript_filepath, 'w', encoding='utf-8') as f:
-        # f.write(speaker_transcripts)
         for segment in speaker_transcripts:
             f.write(f"[{segment['speaker']} - {segment['start']:.2f}s to {segment['end']:.2f}s]: {segment['text']}\n")
 
@@ -70,10 +92,10 @@ def transcribe():
     return jsonify({
         "transcript": combined_transcript,
         "speaker_segments": speaker_transcripts,
-        "transcript_file": transcript_filename, 
-        "model": "whisper + diarization", 
+        "transcript_file": transcript_filename,
+        "model": "whisper + diarization",
         "transcription time": transcription_time
-        })
+    })
 
 
 # using faster-whisper model
@@ -111,34 +133,76 @@ def summarize():
     transcript = data.get("transcript")
     if not transcript:
         return jsonify({"error": "No transcript provided"}), 400
-
     # Generate summary
     print("summarising your transcript..")
-    system_input = "You are a professional assistant who summarizes meeting transcripts into concise bullet points."
-    summary = summarize_long_text(transcript)
-    print('summary generated!!')
+    task_prompt = "Generate a concise summary of given meeting transcript: "
+    summary = query_nvidia_model(transcript, task_prompt)
+    if summary is None:
+        return jsonify({"error": "Failed to get summary from NVIDIA API"}), 500
 
-    # Save summary to file
-    # summary_filename = f"summary_{uuid.uuid4()}.txt"
-    # summary_filepath = os.path.join(OUTPUT_FOLDER, summary_filename)
-    # with open(summary_filepath, 'w', encoding='utf-8') as f:
-    #     f.write(summary)
     return jsonify({"summary": summary})
 
 
-@app.route('/action_items', methods=['POST'])
+
+@app.route('/action-items', methods=['POST'])
 def action_items():
     data = request.json
     transcript = data.get("transcript")
     if not transcript:
         return jsonify({"error": "No transcript provided"}), 400
-
     print("Extracting action items...")
-    system_input = "You are an assistant that extracts clear and concise action items from a meeting transcript."
-    actions = extract_action_items(transcript)  # implement this function
-    print("Action items extracted.")
+    task_prompt = "Extract clear and concise action items from the following meeting transcript. Format the output as bullet points, with each bullet being a specific task or decision: Transcript: "
+    actions = query_nvidia_model(transcript, task_prompt)
+    if actions is None:
+        return jsonify({"error": "Failed to get action items from NVIDIA API"}), 500
 
     return jsonify({"action_items": actions})
+
+
+@app.route('/minutes-of-meeting', methods=['POST'])
+def minutes_of_meeting():
+    data = request.json
+    transcript = data.get("transcript")
+    if not transcript:
+        return jsonify({"error": "No transcript provided"}), 400
+    print("Generating minutes of meeting...")
+    task_prompt = "Generate minutes of the meeting from the transcript below. Include sections like Date, Attendees, Agenda if applicable, include summary of any action items or decisions made."
+    mom = query_nvidia_model(transcript, task_prompt)
+    if mom is None:
+        return jsonify({"error": "Failed to get minutes of meeting from NVIDIA API"}), 500
+
+    return jsonify({"minutes_of_meeting": mom})
+
+
+@app.route('/sentiment', methods=['POST'])
+def sentiment():
+    data = request.json
+    transcript = data.get("transcript")
+    if not transcript:
+        return jsonify({"error": "No transcript provided"}), 400
+    print("Generating Sentiment Analysis...")
+    task_prompt = "Give the sentiment analysis of given meeting transcript: "
+    mom = query_nvidia_model(transcript, task_prompt)
+    if mom is None:
+        return jsonify({"error": "Failed to get minutes of meeting from NVIDIA API"}), 500
+
+    return jsonify({"minutes_of_meeting": mom})
+
+
+@app.route('/scoring-mechanism', methods=['POST'])
+def scoring_mechanism():
+    data = request.json
+    transcript = data.get("transcript")
+    agenda = data.get("agenda")
+    if not transcript or agenda:
+        return jsonify({"error": "No transcript or agenda provided"}), 400
+    print("Generating Meeting Score...")
+    task_prompt = "Give a score on how well the meeting was aligned with the agenda."
+    mom = query_nvidia_scoring_model(transcript, agenda, task_prompt)
+    if mom is None:
+        return jsonify({"error": "Failed to get minutes of meeting from NVIDIA API"}), 500
+
+    return jsonify({"minutes_of_meeting": mom})
 
 
 @app.route('/download/<filename>')
@@ -149,47 +213,152 @@ def download_file(filename):
     return jsonify({"error": "File not found"}), 404
 
 
+
+
+@app.route('/audio/<filename>')
+def serve_audio(filename):
+    return send_from_directory("audio_folder", filename)
+
+@app.route('/live_transcripts/<path:filename>')
+def serve_live_transcript_file(filename):
+    return send_from_directory('live_transcripts', filename)
+
+@app.route('/live_recored_meet_audio/<path:filename>')
+def serve_live_audio_file(filename):
+    return send_from_directory('live_recored_meet_audio', filename)
+
+
+@app.route('/save_audio_recording', methods=['POST'])
+def save_audio_recording():
+    if 'audio_data' not in request.files:
+        return jsonify({'error': 'No audio file uploaded'}), 400
+    
+    audio_file = request.files['audio_data']
+    
+    if audio_file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    
+    # Generate a unique filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"recording_{timestamp}.webm"
+    save_path = os.path.join('live_recored_meet_audio', filename)
+    
+    audio_file.save(save_path)
+    
+    return jsonify({
+        'message': 'Audio saved successfully',
+        'filename': filename,
+        'audio_url': f'/live_recored_meet_audio/{filename}'
+    })
+
+
 @app.route('/start_realtime_transcription', methods=['POST'])
-def start_stt():
-    global recorder
-    global transcription_thread
-    if recorder is None and (transcription_thread is None or not transcription_thread.is_alive()):
-        stop_flag.clear() # Ensure the flag is clear before starting a new transcription
-        transcription_thread = threading.Thread(target=start_realtime_transcription_loop)
-        transcription_thread.daemon = True
-        transcription_thread.start()
-        return jsonify({"message": "Real-time transcription started."}), 200
-    return jsonify({"message": "Already running."}), 200
+def start_transcription():
+    global transcriber
+    try:
+        if transcriber is None or transcriber.stop_flag.is_set():
+            transcriber = CustomTranscriber()
+            transcriber.start('live_recored_meet_audio')
+            return jsonify({
+                "status": "success",
+                "message": "Real-time transcription started",
+                "model": "faster-whisper"
+            }), 200
+        return jsonify({
+            "status": "error",
+            "message": "Transcription already running"
+        }), 400
+    except Exception as e:
+        print(f"Error starting transcription: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
 
 @app.route('/stop_realtime_transcription', methods=['POST'])
-def stop_stt():
-    global recorder
-    global transcription_thread
+def stop_transcription():
+    global transcriber
+    try:
+        if transcriber and not transcriber.stop_flag.is_set():
+            results = transcriber.stop()
+            
+            # Verify files
+            audio_exists = os.path.exists(results["audio_file"])
+            transcript_exists = os.path.exists(results["transcript_file"])
+            
+            # Prepare response
+            response = {
+                "status": "success",
+                "transcript": results["transcript"],
+                "audio_path": f"/live_recored_meet_audio/{os.path.basename(results['audio_file'])}",
+                "transcript_path": f"/live_transcripts/{os.path.basename(results['transcript_file'])}",
+                "audio_duration": get_audio_duration(results["audio_file"])
+            }
+            
+            return jsonify(response), 200
+        
+        return jsonify({"status": "error", "message": "No active transcription"}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
-    # Safe check: make sure thread is not None before checking if it's alive
-    if transcription_thread is not None:
-        stop_flag.set()  # Signal the transcription thread to stop
-        transcription_thread.join(timeout=10)
+def get_audio_duration(filepath):
+    """Get duration in seconds of audio file"""
+    try:
+        with sf.SoundFile(filepath) as f:
+            return len(f) / f.samplerate
+    except:
+        return 0
 
-        print("Warning: Transcription thread did not terminate cleanly within timeout.")
-        recorder = None
-        transcription_thread = None
-        stop_flag.clear()  # Reset for future use
-        return jsonify({"message": "Real-time transcription stop initiated, but thread did not join cleanly."}), 202
 
-    else:
-        return jsonify({"message": "Real-time transcription is not running."}), 200
+# temp audio recorded file saved at location and found using this api
+@app.route('/transcripts/<path:filename>')
+def serve_audio_file(filename):
+    return send_from_directory('transcripts', filename)
+
 
 
 @app.route('/get_live_transcript', methods=['GET'])
 def get_live_transcript():
-    transcript_text = get_realtime_transcript_queue()
-    return jsonify({"text": transcript_text})
+    global transcriber
+    if transcriber is None:
+        return jsonify({
+            "status": "error",
+            "message": "Transcriber not initialized",
+            "debug": "Transcriber is None"
+        }), 400
+        
+    if transcriber.stop_flag.is_set():
+        return jsonify({
+            "status": "error",
+            "message": "Transcription stopped",
+            "debug": "Stop flag is set"
+        }), 400
+        
+    try:
+        transcript = transcriber.get_live_transcript()
+        print(f"Current transcript length: {len(transcript)} chars")
+        return jsonify({
+            "status": "success",
+            "text": transcript,
+            "is_active": True,
+            "model": "faster-whisper"
+        })
+    except Exception as e:
+        print(f"Error in get_live_transcript: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+            "debug": "Exception occurred"
+        }), 500
+
+
 
 @app.route('/get_transcript_file', methods=['GET'])
 def get_transcript_file():
-    if os.path.exists(TRANSCRIPT_FILE_PATH):
-        return send_file(TRANSCRIPT_FILE_PATH, mimetype='text/plain', as_attachment=False)
+    if os.path.exists(LIVE_TRANSCRIPT_FOLDER):
+        return send_file(LIVE_TRANSCRIPT_FOLDER, mimetype='text/plain', as_attachment=False)
     return jsonify({"message": "Transcript file not found."}), 404
 
 if __name__ == '__main__':

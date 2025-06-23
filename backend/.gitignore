@@ -1,6 +1,9 @@
 /uploads
 /outputs
-/transcripts
+/live_transcripts
+/live_transcripts_audio
+/live_recorded_meet_audio
+/voice_samples
 realtimesst.log
 compare.txt
 testing_functions.py

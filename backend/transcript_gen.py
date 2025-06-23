@@ -1,9 +1,11 @@
 import time, os, tempfile
+import numpy as np
 import librosa, whisper
 import soundfile as sf
 from faster_whisper import WhisperModel
 from pyannote.audio import Pipeline
 from pydub import AudioSegment
+from resemblyzer import VoiceEncoder, preprocess_wav
 
 import torch
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -20,6 +22,18 @@ transcription_thread = None
 transcription_whisper_model = whisper.load_model("base")
 faster_whisper_model = WhisperModel("base", device="cpu", compute_type="float32")
 
+encoder = VoiceEncoder()
+# Load known voice samples
+def load_known_embeddings(voice_sample_dir="voice_samples"):
+    known_embeddings = {}
+    for file in os.listdir(voice_sample_dir):
+        if file.endswith(".wav"):
+            name = os.path.splitext(file)[0]
+            wav = preprocess_wav(os.path.join(voice_sample_dir, file))
+            known_embeddings[name] = encoder.embed_utterance(wav)
+    return known_embeddings
+
+known_embeddings = load_known_embeddings()
 
 # Helper functions
 def preprocess_audio(filepath, target_sr=16000, chunk_duration=30):
@@ -64,7 +78,9 @@ def preprocess_audio(filepath, target_sr=16000, chunk_duration=30):
     return summary[0]['summary_text']
 
 
+# Identifies speakers without names
 def diarize_and_transcribe(filepath):
+    print('===>>>diarize_and_transcribe called')
     start_time = time.time()
     # Step 1: Diarization
     diarization = diarization_pipeline(filepath)
@@ -100,6 +116,59 @@ def diarize_and_transcribe(filepath):
     end_time = time.time()
     transcription_time = end_time - start_time
     return speaker_transcripts, transcription_time
+
+
+
+# Recognises speakers with names in the meeting
+def speaker_rec_and_transcribe(filepath):
+    print('===>>>speaker_rec_and_transcribe called')
+    start_time = time.time()
+    # Step 1: Diarization
+    diarization = diarization_pipeline(filepath)
+    print("Diarization complete")
+
+    # Step 2: Load audio for segmentation
+    audio = AudioSegment.from_file(filepath)
+    
+    speaker_transcripts = []
+    for turn, _, speaker in diarization.itertracks(yield_label=True):
+        segment = audio[turn.start * 1000: turn.end * 1000]  # milliseconds
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio_file:
+            segment.export(temp_audio_file.name, format="wav")
+            temp_audio_path = temp_audio_file.name
+
+        # Step 3: Transcribe the segment using Whisper
+        try:
+            result = transcription_whisper_model.transcribe(temp_audio_path)
+            text = result["text"]
+        except Exception as e:
+            text = f"Error: {e}"
+
+    # Speaker recognition: match embedding
+        wav = preprocess_wav(temp_audio_path)
+        segment_embedding = encoder.embed_utterance(wav)
+
+        best_match = None
+        best_score = float('-inf')
+        for name, known_emb in known_embeddings.items():
+            score = np.inner(segment_embedding, known_emb)
+            if score > best_score:
+                best_score = score
+                best_match = name
+
+        speaker_name = best_match if best_match else speaker
+
+        speaker_transcripts.append({
+            "speaker": speaker_name,
+            "start": turn.start,
+            "end": turn.end,
+            "text": text
+        })
+
+    end_time = time.time()
+    transcription_time = end_time - start_time
+    return speaker_transcripts, transcription_time
+
 
 
 

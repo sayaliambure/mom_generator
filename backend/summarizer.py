@@ -154,8 +154,6 @@ def extract_action_items(text):
 
 
 
-
-
     # # Extract only the action items (strip anything before a known anchor if needed)
     # cleaned_output = decoded.split("Action Items:")[-1].strip()
     # # Extract and normalize bullets or numbered lines
@@ -174,6 +172,3 @@ def extract_action_items(text):
     print('decodedd; ', decoded)
     # print('bullets', bullets)
     return action_items
-
-
-
