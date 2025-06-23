@@ -2,8 +2,10 @@ import React, { useState, useEffect, useRef } from "react";
 import axios from 'axios';
 import { ArrowDownTrayIcon, XMarkIcon, 
   MicrophoneIcon, StopIcon, EyeIcon, EyeSlashIcon } from "@heroicons/react/24/solid";
+import { supabase } from '../supabaseClient';
+import { saveMeetingForUser } from '../utils/saveMeetingForUser';
 
-const MeetingMinutesGenerator = () => {
+const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
   const [mode, setMode] = useState(""); // "upload" or "record"
   const [file, setFile] = useState(null);
   const [meetingTitle, setMeetingTitle] = useState("");
@@ -413,384 +415,433 @@ const MeetingMinutesGenerator = () => {
     }
   };
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    window.location.reload();
+  };
+
   return (
-    <div className="max-w-5xl mx-auto mt-10 p-6 bg-white rounded-lg shadow-md relative">
-      <h1 className="text-3xl font-bold text-center mb-4">Meeting Minutes Generator</h1>
-      <p className="text-center text-gray-500 mb-8">Upload or record a meeting to generate transcripts and minutes</p>
-
-      <div className="flex justify-center gap-4 mb-6">
-        <button onClick={() => setMode("upload")} className={`px-4 py-2 rounded ${mode === "upload" ? "bg-black text-white" : "bg-gray-200"}`}>
-          Upload Audio File
+    <div className="relative min-h-screen bg-gray-100">
+      <button
+        onClick={handleLogout}
+        className="absolute top-4 right-4 bg-gradient-to-r from-black to-blue-600 text-white px-4 py-2 rounded shadow"
+      >
+        Logout
+      </button>
+      {onViewProfile && (
+        <button
+          onClick={onViewProfile}
+          className="absolute top-4 right-32 bg-gradient-to-r from-blue-600 to-cyan-500 text-white px-4 py-2 rounded shadow"
+        >
+          View Profile
         </button>
-        <button onClick={() => setMode("record")} className={`px-4 py-2 rounded ${mode === "record" ? "bg-black text-white" : "bg-gray-200"}`}>
-          Record Meeting
-        </button>
-      </div>
-
-      {mode === "upload" && (
-        <div className="border rounded-lg p-6 border-dashed border-gray-300 bg-gray-50 mb-6 text-center">
-          <input
-            type="file"
-            accept="audio/*,video/*"
-            onChange={handleFileChange}
-            className="hidden"
-            id="fileInput"
-          />
-          <label htmlFor="fileInput" className="cursor-pointer text-blue-600 font-semibold">
-            {file ? file.name : "Choose File"}
-          </label>
-
-          <div className="mb-4">
-            <label className="inline-flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={identifySpeakers}
-                onChange={(e) => setIdentifySpeakers(e.target.checked)}
-              />
-              <span>Identify Speakers</span>
-            </label>
-          </div>
-
-          {identifySpeakers && (
-            <div className="space-y-4">
-              {attendees.map((attendee, index) => (
-                <div key={index} className="border p-4 rounded-md shadow-sm">
-                  <label className="block mb-1 font-medium text-sm">Attendee {index + 1}</label>
-                  <input
-                    type="text"
-                    placeholder="Name"
-                    value={attendee.name}
-                    onChange={(e) => {
-                      const updated = [...attendees];
-                      updated[index].name = e.target.value;
-                      setAttendees(updated);
-                    }}
-                    className="w-full border rounded p-2 mb-2"
-                  />
-                  <input
-                    type="file"
-                    accept="audio/*"
-                    onChange={(e) => {
-                      const updated = [...attendees];
-                      updated[index].sample = e.target.files[0];
-                      setAttendees(updated);
-                    }}
-                    className="w-full"
-                  />
-                </div>
-              ))}
-
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  setAttendees([...attendees, { name: "", sample: null }]);
-                }}
-                className="text-sm text-blue-600 mt-2 underline"
-              >
-                + Add Attendee
-              </button>
-            </div>
-          )}
-        </div>
       )}
+      <div className="max-w-5xl mx-auto mt-10 p-6 bg-white rounded-lg shadow-md relative">
+        <h1 className="text-3xl font-bold text-center mb-4">Meeting Minutes Generator</h1>
+        <p className="text-center text-gray-500 mb-8">Upload or record a meeting to generate transcripts and minutes</p>
 
-      {mode === "record" && (
-        <div className="flex flex-col items-center mb-6 space-y-4">
-          {!isRecording ? (
-            <button
-              onClick={startRecording}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition"
-            >
-              <MicrophoneIcon className="h-5 w-5" />
-              Start Recording
-            </button>
-          ) : (
-            <div className="flex flex-col sm:flex-row sm:space-x-4 space-y-2 sm:space-y-0">
-              <div className="flex items-center gap-2">
+        <div className="flex justify-center gap-4 mb-6">
+          <button onClick={() => setMode("upload")} className={`px-4 py-2 rounded ${mode === "upload" ? "bg-black text-white" : "bg-gray-200"}`}>
+            Upload Audio File
+          </button>
+          <button onClick={() => setMode("record")} className={`px-4 py-2 rounded ${mode === "record" ? "bg-black text-white" : "bg-gray-200"}`}>
+            Record Meeting
+          </button>
+        </div>
+
+        {mode === "upload" && (
+          <div className="border rounded-lg p-6 border-dashed border-gray-300 bg-gray-50 mb-6 text-center">
+            <input
+              type="file"
+              accept="audio/*,video/*"
+              onChange={handleFileChange}
+              className="hidden"
+              id="fileInput"
+            />
+            <label htmlFor="fileInput" className="cursor-pointer text-blue-600 font-semibold">
+              {file ? file.name : "Choose File"}
+            </label>
+
+            <div className="mb-4">
+              <label className="inline-flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={identifySpeakers}
+                  onChange={(e) => setIdentifySpeakers(e.target.checked)}
+                />
+                <span>Identify Speakers</span>
+              </label>
+            </div>
+
+            {identifySpeakers && (
+              <div className="space-y-4">
+                {attendees.map((attendee, index) => (
+                  <div key={index} className="border p-4 rounded-md shadow-sm">
+                    <label className="block mb-1 font-medium text-sm">Attendee {index + 1}</label>
+                    <input
+                      type="text"
+                      placeholder="Name"
+                      value={attendee.name}
+                      onChange={(e) => {
+                        const updated = [...attendees];
+                        updated[index].name = e.target.value;
+                        setAttendees(updated);
+                      }}
+                      className="w-full border rounded p-2 mb-2"
+                    />
+                    <input
+                      type="file"
+                      accept="audio/*"
+                      onChange={(e) => {
+                        const updated = [...attendees];
+                        updated[index].sample = e.target.files[0];
+                        setAttendees(updated);
+                      }}
+                      className="w-full"
+                    />
+                  </div>
+                ))}
+
                 <button
-                  onClick={stopRecording}
-                  className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded transition"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setAttendees([...attendees, { name: "", sample: null }]);
+                  }}
+                  className="text-sm text-blue-600 mt-2 underline"
                 >
-                  <StopIcon className="h-5 w-5" />
-                  Stop Recording
+                  + Add Attendee
                 </button>
               </div>
+            )}
+          </div>
+        )}
 
-              <div className="flex items-center gap-2">
-                {!showLive ? (
+        {mode === "record" && (
+          <div className="flex flex-col items-center mb-6 space-y-4">
+            {!isRecording ? (
+              <button
+                onClick={startRecording}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition"
+              >
+                <MicrophoneIcon className="h-5 w-5" />
+                Start Recording
+              </button>
+            ) : (
+              <div className="flex flex-col sm:flex-row sm:space-x-4 space-y-2 sm:space-y-0">
+                <div className="flex items-center gap-2">
                   <button
-                    onClick={startLiveTranscript}
-                    className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded transition"
+                    onClick={stopRecording}
+                    className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded transition"
                   >
-                    <EyeIcon className="h-5 w-5" />
-                    Show Live Transcript
+                    <StopIcon className="h-5 w-5" />
+                    Stop Recording
                   </button>
-                ) : (
-                  <button
-                    onClick={stopLiveTranscript}
-                    className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded transition"
-                  >
-                    <EyeSlashIcon className="h-5 w-5" />
-                    Stop Live Transcript
-                  </button>
-                )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {!showLive ? (
+                    <button
+                      onClick={startLiveTranscript}
+                      className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded transition"
+                    >
+                      <EyeIcon className="h-5 w-5" />
+                      Show Live Transcript
+                    </button>
+                  ) : (
+                    <button
+                      onClick={stopLiveTranscript}
+                      className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded transition"
+                    >
+                      <EyeSlashIcon className="h-5 w-5" />
+                      Stop Live Transcript
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {showLive && (
+              <div className="w-full max-w-3xl px-4">
+                <h2 className="text-lg font-semibold text-gray-700 mb-2 text-center">
+                  Live Transcript
+                  {!isRecording && (
+                    <span className="text-sm text-red-500 ml-2">(Recording stopped)</span>
+                  )}
+                </h2>
+                <div className="bg-white p-4 rounded-lg shadow-md border border-gray-200 max-h-64 overflow-y-auto">
+                  {liveTranscript || (
+                    <p className="text-gray-500">
+                      {isRecording ? "Listening for speech..." : "Recording not active"}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {isRecording && (
+              <div className="flex items-center justify-center gap-2 text-red-500 mb-4">
+                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                <span>Recording in progress...</span>
+              </div>
+            )}
+
+            {showLive && isLive && (
+              <div className="flex items-center justify-center gap-2 text-blue-500 mb-4">
+                <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
+                <span>Live transcription active</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {audioURL && (
+          <div className="mt-4">
+            <p className="text-gray-600 mb-2">Recorded Audio:</p>
+            <audio controls src={audioURL} className="w-full" />
+          </div>
+        )}
+
+        <input
+          type="text"
+          placeholder="Meeting Title"
+          value={meetingTitle}
+          onChange={(e) => setMeetingTitle(e.target.value)}
+          className="w-full border rounded p-2 mb-4"
+        />
+        <input
+          type="date"
+          value={meetingDate}
+          onChange={(e) => setMeetingDate(e.target.value)}
+          className="w-full border rounded p-2 mb-4"
+        />
+        <textarea
+          placeholder="Attendees (e.g. John Doe, Jane Smith)"
+          value={meet_attendees}
+          onChange={(e) => setMeetAttendees(e.target.value)}
+          className="w-full border rounded p-2 mb-4"
+          rows={1}
+        />
+        <textarea
+          placeholder="Meeting Agenda"
+          value={meetingAgenda}
+          onChange={(e) => setAgenda(e.target.value)}
+          className="w-full border rounded p-2 mb-4"
+          rows={3}
+        />
+
+        {mode === "upload" ? (
+          <button
+            onClick={handleGenerate}
+            disabled={loading}
+            className={`w-full p-3 text-white font-bold rounded ${loading ? "bg-gray-400" : "bg-black hover:bg-gray-800"}`}
+          >
+            {loading ? "Generating..." : "Generate Transcript"}
+          </button>
+        ) : (
+          <button
+            onClick={getStoredTranscript}
+            disabled={loading}
+            className={`w-full p-3 text-white font-bold rounded ${loading ? "bg-gray-400" : "bg-black hover:bg-gray-800"}`}
+          >
+            {loading ? "Fetching..." : "Get Transcript"}
+          </button>
+        )}
+
+        {(editableTranscript || transcriptText) && (
+          <div className="mt-8 bg-gray-100 p-4 rounded">
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="text-xl font-semibold">Meeting Transcript</h2>
+              <div className="mt-2">
+                <DownloadButton content={transcript} filename="transcript.txt" />
               </div>
             </div>
-          )}
-
-          {showLive && (
-            <div className="w-full max-w-3xl px-4">
-              <h2 className="text-lg font-semibold text-gray-700 mb-2 text-center">
-                Live Transcript
-                {!isRecording && (
-                  <span className="text-sm text-red-500 ml-2">(Recording stopped)</span>
-                )}
-              </h2>
-              <div className="bg-white p-4 rounded-lg shadow-md border border-gray-200 max-h-64 overflow-y-auto">
-                {liveTranscript || (
-                  <p className="text-gray-500">
-                    {isRecording ? "Listening for speech..." : "Recording not active"}
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {isRecording && (
-            <div className="flex items-center justify-center gap-2 text-red-500 mb-4">
-              <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
-              <span>Recording in progress...</span>
-            </div>
-          )}
-
-          {showLive && isLive && (
-            <div className="flex items-center justify-center gap-2 text-blue-500 mb-4">
-              <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
-              <span>Live transcription active</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {audioURL && (
-        <div className="mt-4">
-          <p className="text-gray-600 mb-2">Recorded Audio:</p>
-          <audio controls src={audioURL} className="w-full" />
-        </div>
-      )}
-
-      <input
-        type="text"
-        placeholder="Meeting Title"
-        value={meetingTitle}
-        onChange={(e) => setMeetingTitle(e.target.value)}
-        className="w-full border rounded p-2 mb-4"
-      />
-      <input
-        type="date"
-        value={meetingDate}
-        onChange={(e) => setMeetingDate(e.target.value)}
-        className="w-full border rounded p-2 mb-4"
-      />
-      <textarea
-        placeholder="Attendees (e.g. John Doe, Jane Smith)"
-        value={meet_attendees}
-        onChange={(e) => setMeetAttendees(e.target.value)}
-        className="w-full border rounded p-2 mb-4"
-        rows={1}
-      />
-      <textarea
-        placeholder="Meeting Agenda"
-        value={meetingAgenda}
-        onChange={(e) => setAgenda(e.target.value)}
-        className="w-full border rounded p-2 mb-4"
-        rows={3}
-      />
-
-      {mode === "upload" ? (
-        <button
-          onClick={handleGenerate}
-          disabled={loading}
-          className={`w-full p-3 text-white font-bold rounded ${loading ? "bg-gray-400" : "bg-black hover:bg-gray-800"}`}
-        >
-          {loading ? "Generating..." : "Generate Transcript"}
-        </button>
-      ) : (
-        <button
-          onClick={getStoredTranscript}
-          disabled={loading}
-          className={`w-full p-3 text-white font-bold rounded ${loading ? "bg-gray-400" : "bg-black hover:bg-gray-800"}`}
-        >
-          {loading ? "Fetching..." : "Get Transcript"}
-        </button>
-      )}
-
-      {(editableTranscript || transcriptText) && (
-        <div className="mt-8 bg-gray-100 p-4 rounded">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="text-xl font-semibold">Meeting Transcript</h2>
-            <div className="mt-2">
-              <DownloadButton content={transcript} filename="transcript.txt" />
-            </div>
+            <textarea
+              value={editableTranscript}
+              onChange={(e) => setEditableTranscript(e.target.value)}
+              className="w-full p-2 border rounded whitespace-pre-wrap"
+              rows={10}
+            />
           </div>
-          <textarea
-            value={editableTranscript}
-            onChange={(e) => setEditableTranscript(e.target.value)}
-            className="w-full p-2 border rounded whitespace-pre-wrap"
-            rows={10}
-          />
-        </div>
-      )}
+        )}
 
-      {(transcript || transcriptText) && (
-        <div className="mt-6 flex gap-4">
-          <button
-            onClick={handleGenerateSummary}
-            style={{ background: 'linear-gradient(90deg,rgb(9, 10, 13) 0%,rgb(43, 54, 76) 100%)' }}
-            className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
-            disabled={generatingSummary}
-          >
-            {generatingSummary ? "Generating..." : "Generate Summary"}
-          </button>
+        {(transcript || transcriptText) && (
+          <div className="mt-6 flex gap-4">
+            <button
+              onClick={handleGenerateSummary}
+              style={{ background: 'linear-gradient(90deg,rgb(9, 10, 13) 0%,rgb(43, 54, 76) 100%)' }}
+              className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
+              disabled={generatingSummary}
+            >
+              {generatingSummary ? "Generating..." : "Generate Summary"}
+            </button>
 
-          <button
-            onClick={handleGenerateActionItems}
-            style={{ background: 'linear-gradient(90deg,rgb(33, 34, 38) 0%,rgb(49, 65, 85) 100%)' }}
-            className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
-            disabled={generatingActions}
-          >
-            {generatingActions ? "Generating..." : "Generate Action Items"}
-          </button>
+            <button
+              onClick={handleGenerateActionItems}
+              style={{ background: 'linear-gradient(90deg,rgb(33, 34, 38) 0%,rgb(49, 65, 85) 100%)' }}
+              className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
+              disabled={generatingActions}
+            >
+              {generatingActions ? "Generating..." : "Generate Action Items"}
+            </button>
 
-          <button
-            onClick={handleGenerateMinutes}
-            style={{ background: 'linear-gradient(90deg, #314755 0%, #6b8dd6 100%)' }}
-            className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
-            disabled={generatingMinutes}
-          >
-            {generatingMinutes ? "Generating..." : "Generate Meeting Minutes"}
-          </button>
-          <button
-            onClick={handleSentimentAnalysis}
-            style={{ background: 'linear-gradient(90deg, #6b8dd6 0%, #48c6ef 100%)' }}
-            className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
-            disabled={analyzingSentiment}
-          >
-            {analyzingSentiment ? "Analyzing Sentiment..." : "Sentiment Analysis"}
-          </button>
-          <button
-            onClick={handleScoring}
-            style={{ background: 'linear-gradient(90deg,rgb(72, 153, 239) 0%,rgb(177, 184, 246) 100%)' }}
-            className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
-            disabled={scoring}
-          >
-            {scoring ? "Scoring..." : "Scoring Mechanism"}
-          </button>
-        </div>
-      )}
-
-      {summary && (
-        <div className="mt-6 bg-gray-50 p-4 border rounded">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="text-xl font-semibold">Summary</h2>
-            <div className="mt-2">
-              <DownloadButton content={summary} filename="summary.txt" />
-            </div>
-          </div>
-          <textarea
-            value={editableSummary}
-            onChange={(e) => setEditableSummary(e.target.value)}
-            className="w-full p-2 border rounded whitespace-pre-wrap"
-            rows={6}
-          />
-        </div>
-      )}
-
-      {actionItems && (
-        <div className="mt-6 bg-gray-50 p-4 border rounded">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="text-xl font-semibold">Action Items</h2>
-            <div className="mt-2">
-              <DownloadButton content={actionItems} filename="action_items.txt" />
-            </div>
-          </div>
-          <textarea
-            value={editableActionItems}
-            onChange={(e) => setEditableActionItems(e.target.value)}
-            className="w-full p-2 border rounded whitespace-pre-wrap"
-            rows={6}
-          />
-        </div>
-      )}
-
-      {meetingMinutes && (
-        <div className="mt-6 bg-gray-50 p-4 border rounded">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="text-xl font-semibold">Meeting Minutes</h2>
-            <div className="mt-2">
-              <DownloadButton content={editableMeetingMinutes} filename="meeting_minutes.txt" />
-            </div>
-          </div>
-          <textarea
-            value={editableMeetingMinutes}
-            onChange={(e) => setEditableMeetingMinutes(e.target.value)}
-            className="w-full p-2 border rounded whitespace-pre-wrap"
-            rows={15}
-          />
-        </div>
-      )}
-
-      {sentimentResult && (
-        <div className="mt-6 bg-gray-50 p-4 border rounded">
-          <h2 className="text-xl font-semibold mb-2">Sentiment Analysis</h2>
-          <textarea
-            value={sentimentResult}
-            readOnly
-            className="w-full p-2 border rounded whitespace-pre-wrap"
-            rows={4}
-          />
-        </div>
-      )}
-      {scoringResult && (
-        <div className="mt-6 bg-gray-50 p-4 border rounded">
-          <h2 className="text-xl font-semibold mb-2">Scoring Mechanism</h2>
-          <textarea
-            value={scoringResult}
-            readOnly
-            className="w-full p-2 border rounded whitespace-pre-wrap"
-            rows={4}
-          />
-        </div>
-      )}
-
-      <button
-        onClick={() => setShowNotes(true)}
-        className="fixed bottom-10 right-10 bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 flex items-center gap-2"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 20h9" />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 4h6m-3 0v16M4 6h16M4 10h16M4 14h16M4 18h16" />
-        </svg>
-        
-        Take Notes
-      </button>
-
-      {showNotes && (
-        <div className="fixed bottom-24 right-8 w-96 bg-white shadow-lg rounded-lg p-4 z-50">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="text-lg font-semibold">Quick Notes</h2>
-            <button onClick={() => setShowNotes(false)}>
-              <XMarkIcon className="h-5 w-5 text-gray-500 hover:text-gray-700" />
+            <button
+              onClick={handleGenerateMinutes}
+              style={{ background: 'linear-gradient(90deg, #314755 0%, #6b8dd6 100%)' }}
+              className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
+              disabled={generatingMinutes}
+            >
+              {generatingMinutes ? "Generating..." : "Generate Meeting Minutes"}
+            </button>
+            <button
+              onClick={handleSentimentAnalysis}
+              style={{ background: 'linear-gradient(90deg, #6b8dd6 0%, #48c6ef 100%)' }}
+              className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
+              disabled={analyzingSentiment}
+            >
+              {analyzingSentiment ? "Analyzing Sentiment..." : "Sentiment Analysis"}
+            </button>
+            <button
+              onClick={handleScoring}
+              style={{ background: 'linear-gradient(90deg,rgb(72, 153, 239) 0%,rgb(177, 184, 246) 100%)' }}
+              className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
+              disabled={scoring}
+            >
+              {scoring ? "Scoring..." : "Scoring Mechanism"}
             </button>
           </div>
-          <textarea
-            className="w-full h-96 p-2 border border-gray-300 rounded"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Type your notes here..."
-          />
-        </div>
-      )}
+        )}
+
+        {summary && (
+          <div className="mt-6 bg-gray-50 p-4 border rounded">
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="text-xl font-semibold">Summary</h2>
+              <div className="mt-2">
+                <DownloadButton content={summary} filename="summary.txt" />
+              </div>
+            </div>
+            <textarea
+              value={editableSummary}
+              onChange={(e) => setEditableSummary(e.target.value)}
+              className="w-full p-2 border rounded whitespace-pre-wrap"
+              rows={6}
+            />
+          </div>
+        )}
+
+        {actionItems && (
+          <div className="mt-6 bg-gray-50 p-4 border rounded">
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="text-xl font-semibold">Action Items</h2>
+              <div className="mt-2">
+                <DownloadButton content={actionItems} filename="action_items.txt" />
+              </div>
+            </div>
+            <textarea
+              value={editableActionItems}
+              onChange={(e) => setEditableActionItems(e.target.value)}
+              className="w-full p-2 border rounded whitespace-pre-wrap"
+              rows={6}
+            />
+          </div>
+        )}
+
+        {meetingMinutes && (
+          <div className="mt-6 bg-gray-50 p-4 border rounded">
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="text-xl font-semibold">Meeting Minutes</h2>
+              <div className="mt-2">
+                <DownloadButton content={editableMeetingMinutes} filename="meeting_minutes.txt" />
+              </div>
+            </div>
+            <textarea
+              value={editableMeetingMinutes}
+              onChange={(e) => setEditableMeetingMinutes(e.target.value)}
+              className="w-full p-2 border rounded whitespace-pre-wrap"
+              rows={15}
+            />
+          </div>
+        )}
+
+        {sentimentResult && (
+          <div className="mt-6 bg-gray-50 p-4 border rounded">
+            <h2 className="text-xl font-semibold mb-2">Sentiment Analysis</h2>
+            <textarea
+              value={sentimentResult}
+              readOnly
+              className="w-full p-2 border rounded whitespace-pre-wrap"
+              rows={4}
+            />
+          </div>
+        )}
+        {scoringResult && (
+          <div className="mt-6 bg-gray-50 p-4 border rounded">
+            <h2 className="text-xl font-semibold mb-2">Scoring Mechanism</h2>
+            <textarea
+              value={scoringResult}
+              readOnly
+              className="w-full p-2 border rounded whitespace-pre-wrap"
+              rows={4}
+            />
+          </div>
+        )}
+
+        {user && (transcript || summary || actionItems || meetingMinutes) && (
+          <button
+            className="mt-4 bg-green-600 text-white px-4 py-2 rounded"
+            onClick={async () => {
+              try {
+                console.log('Saving meeting for user:', user?.id);
+                await saveMeetingForUser(user, {
+                  title: meetingTitle,
+                  date: meetingDate || null,
+                  attendees: meet_attendees,
+                  agenda: meetingAgenda,
+                  transcript: editableTranscript || transcript || transcriptText,
+                  summary,
+                  action_items: actionItems,
+                  minutes: meetingMinutes,
+                  sentiment: sentimentResult,
+                  score: scoringResult,
+                }, file);
+                alert('Meeting saved!');
+              } catch (err) {
+                alert('Error saving meeting: ' + (err.message || JSON.stringify(err)));
+              }
+            }}
+          >
+            Save Meeting
+          </button>
+        )}
+
+        <button
+          onClick={() => setShowNotes(true)}
+          className="fixed bottom-10 right-10 bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 flex items-center gap-2"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 20h9" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 4h6m-3 0v16M4 6h16M4 10h16M4 14h16M4 18h16" />
+          </svg>
+          
+          Take Notes
+        </button>
+
+        {showNotes && (
+          <div className="fixed bottom-24 right-8 w-96 bg-white shadow-lg rounded-lg p-4 z-50">
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="text-lg font-semibold">Quick Notes</h2>
+              <button onClick={() => setShowNotes(false)}>
+                <XMarkIcon className="h-5 w-5 text-gray-500 hover:text-gray-700" />
+              </button>
+            </div>
+            <textarea
+              className="w-full h-96 p-2 border border-gray-300 rounded"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Type your notes here..."
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 };

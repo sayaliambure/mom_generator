@@ -33,8 +33,6 @@ os.makedirs(LIVE_RECORDED_MEET_FOLDER, exist_ok=True)
 os.makedirs(VOICE_SAMPLES, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-print(f"Can write to folder: {os.access(LIVE_RECORDED_MEET_FOLDER, os.W_OK)}")
-
 stop_flag = threading.Event() # A flag to signal the transcription thread to stop
 transcription_thread = None
 transcriber = None
