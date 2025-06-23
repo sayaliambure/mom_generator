@@ -28,7 +28,9 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
   const [generatingActions, setGeneratingActions] = useState(false);
   const [generatingMinutes, setGeneratingMinutes] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
-  const [notes, setNotes] = useState('');
+  const [noteInput, setNoteInput] = useState('');
+  const [noteTimestamp, setNoteTimestamp] = useState(null);
+  const [timestampedNotes, setTimestampedNotes] = useState([]); // {content, timestamp}
   const [editableTranscript, setEditableTranscript] = useState("");
   const [editableSummary, setEditableSummary] = useState("");
   const [editableActionItems, setEditableActionItems] = useState("");
@@ -47,6 +49,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
   const [scoringResult, setScoringResult] = useState("");
   const [analyzingSentiment, setAnalyzingSentiment] = useState(false);
   const [scoring, setScoring] = useState(false);
+  const [includeNotesInTranscript, setIncludeNotesInTranscript] = useState(false);
 
   useEffect(() => {
     let interval;
@@ -386,6 +389,28 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
     window.location.reload();
   };
 
+  // Helper to insert notes into transcript
+  function insertNotesIntoTranscript(transcript, notes) {
+    // If transcript is segmented by time, insert at the right place
+    // Otherwise, append at the end
+    let result = transcript;
+    // Simple: append at the end
+    result += '\n\n';
+    notes.forEach(note => {
+      result += `[note taken by user at ${note.timestamp.toFixed(1)}s: ${note.content}]\n`;
+    });
+    return result;
+  }
+
+  async function handleGenerateWithNotes(transcriptWithNotes) {
+    setLoading(true);
+    try {
+      setTranscript(transcriptWithNotes);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="relative min-h-screen bg-gray-100">
       <button
@@ -433,6 +458,25 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
               <div className="mt-4 w-full">
                 <p className="text-gray-600 mb-2">Audio Preview:</p>
                 <audio controls src={audioURL} className="w-full" />
+                {/* Note markers below audio preview */}
+                {timestampedNotes.length > 0 && (
+                  <div className="relative w-full h-6 mt-1 flex items-center">
+                    {timestampedNotes.map((note, idx) => {
+                      const audio = document.querySelector('audio');
+                      const duration = audio ? audio.duration : 1;
+                      const percent = duration ? (note.timestamp / duration) * 100 : 0;
+                      return (
+                        <button
+                          key={idx}
+                          style={{ left: `${percent}%`, transform: 'translateX(-50%)', position: 'absolute', top: 0 }}
+                          className="w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow hover:bg-blue-700 cursor-pointer pointer-events-auto"
+                          title={`Note at ${note.timestamp.toFixed(1)}s`}
+                          onClick={() => alert(note.content)}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
             <div className="mb-4">
@@ -511,6 +555,25 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                 <div className="mt-4 w-full">
                   <p className="text-gray-600 mb-2">Recorded Audio:</p>
                   <audio controls src={audioURL} className="w-full" />
+                  {/* Note markers below audio preview */}
+                  {timestampedNotes.length > 0 && (
+                    <div className="relative w-full h-6 mt-1 flex items-center">
+                      {timestampedNotes.map((note, idx) => {
+                        const audio = document.querySelector('audio');
+                        const duration = audio ? audio.duration : 1;
+                        const percent = duration ? (note.timestamp / duration) * 100 : 0;
+                        return (
+                          <button
+                            key={idx}
+                            style={{ left: `${percent}%`, transform: 'translateX(-50%)', position: 'absolute', top: 0 }}
+                            className="w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow hover:bg-blue-700 cursor-pointer pointer-events-auto"
+                            title={`Note at ${note.timestamp.toFixed(1)}s`}
+                            onClick={() => alert(note.content)}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -594,9 +657,58 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
           rows={3}
         />
 
+        {/* Include notes in transcript checkbox */}
+        <div className="flex items-center mb-2">
+          <input
+            type="checkbox"
+            id="includeNotesInTranscript"
+            checked={includeNotesInTranscript}
+            onChange={e => setIncludeNotesInTranscript(e.target.checked)}
+            className="mr-2"
+          />
+          <label htmlFor="includeNotesInTranscript" className="text-md">Include notes in transcript</label>
+        </div>
         {mode === "upload" ? (
           <button
-            onClick={handleGenerate}
+            onClick={async () => {
+              if (!file) {
+                alert("Please upload a file first.");
+                return;
+              }
+              setLoading(true);
+              const formData = new FormData();
+              formData.append("file", file);
+              formData.append("mode", "upload");
+              if (identifySpeakers) {
+                formData.append("speaker_identification", "true");
+                attendees.forEach((attendee) => {
+                  formData.append("attendee_names", attendee.name);
+                  if (attendee.sample) {
+                    formData.append("samples", attendee.sample);
+                  }
+                });
+              }
+              try {
+                const res = await fetch("http://127.0.0.1:5000/transcribe", {
+                  method: "POST",
+                  body: formData,
+                });
+                const data = await res.json();
+                let transcriptResult = data.transcript;
+                if (includeNotesInTranscript && transcriptResult && timestampedNotes.length > 0) {
+                  transcriptResult = insertNotesIntoTranscript(transcriptResult, timestampedNotes);
+                }
+                if (res.ok) {
+                  setTranscript(transcriptResult);
+                } else {
+                  alert(data.error || "Transcription failed");
+                }
+              } catch (err) {
+                alert("Server error");
+              } finally {
+                setLoading(false);
+              }
+            }}
             disabled={loading}
             className={`w-full p-3 text-white font-bold rounded ${loading ? "bg-gray-400" : "bg-black hover:bg-gray-800"}`}
           >
@@ -628,8 +740,12 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                   body: formData,
                 });
                 const data = await res.json();
+                let transcriptResult = data.transcript;
+                if (includeNotesInTranscript && transcriptResult && timestampedNotes.length > 0) {
+                  transcriptResult = insertNotesIntoTranscript(transcriptResult, timestampedNotes);
+                }
                 if (res.ok) {
-                  setTranscript(data.transcript);
+                  setTranscript(transcriptResult);
                 } else {
                   alert(data.error || "Transcription failed");
                 }
@@ -808,14 +924,22 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
         )}
 
         <button
-          onClick={() => setShowNotes(true)}
+          onClick={() => {
+            let ts = null;
+            const audio = document.querySelector('audio');
+            if ((isRecording || (audio && !audio.paused))) {
+              ts = audio ? audio.currentTime : null;
+            }
+            setNoteTimestamp(ts);
+            setNoteInput('');
+            setShowNotes(true);
+          }}
           className="fixed bottom-10 right-10 bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 flex items-center gap-2"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 20h9" />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 4h6m-3 0v16M4 6h16M4 10h16M4 14h16M4 18h16" />
           </svg>
-          
           Take Notes
         </button>
 
@@ -827,24 +951,34 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                 <XMarkIcon className="h-5 w-5 text-gray-500 hover:text-gray-700" />
               </button>
             </div>
+            {noteTimestamp !== null && (
+              <div className="mb-2 text-xs text-gray-500">Timestamp: {noteTimestamp.toFixed(1)}s</div>
+            )}
             <textarea
-              className="w-full h-96 p-2 border border-gray-300 rounded"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              className="w-full h-32 p-2 border border-gray-300 rounded"
+              value={noteInput}
+              onChange={(e) => setNoteInput(e.target.value)}
               placeholder="Type your notes here..."
             />
             <button
               className="mt-4 bg-blue-600 text-white px-4 py-2 rounded w-full disabled:opacity-50"
-              disabled={!notes.trim() || !user}
+              disabled={!noteInput.trim() || !user}
               onClick={async () => {
                 if (!user) { alert('You must be logged in to save notes.'); return; }
-                try {
-                  await saveNoteForUser(user, notes);
-                  alert('Notes saved!');
+                if (noteTimestamp !== null) {
+                  setTimestampedNotes((prev) => [...prev, { content: noteInput, timestamp: noteTimestamp }]);
                   setShowNotes(false);
-                  setNotes('');
-                } catch (err) {
-                  alert('Error saving notes: ' + (err.message || JSON.stringify(err)));
+                  setNoteInput('');
+                  setNoteTimestamp(null);
+                } else {
+                  try {
+                    await saveNoteForUser(user, noteInput);
+                    alert('Notes saved!');
+                    setShowNotes(false);
+                    setNoteInput('');
+                  } catch (err) {
+                    alert('Error saving notes: ' + (err.message || JSON.stringify(err)));
+                  }
                 }
               }}
             >
