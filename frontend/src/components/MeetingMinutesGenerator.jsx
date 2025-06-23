@@ -40,6 +40,11 @@ const MeetingMinutesGenerator = () => {
   const previousTranscriptRef = useRef(""); // Used to track the last live segment
   const seenLinesRef = useRef(new Set());
 
+  const [sentimentResult, setSentimentResult] = useState("");
+  const [scoringResult, setScoringResult] = useState("");
+  const [analyzingSentiment, setAnalyzingSentiment] = useState(false);
+  const [scoring, setScoring] = useState(false);
+
   useEffect(() => {
     let interval;
     if (isLive) {
@@ -336,6 +341,46 @@ const MeetingMinutesGenerator = () => {
     }
   };
 
+  const handleSentimentAnalysis = async () => {
+    const fullTranscript = editableTranscript || transcript || transcriptText;
+    if (!fullTranscript) {
+      alert("Please generate a transcript first.");
+      return;
+    }
+    setAnalyzingSentiment(true);
+    try {
+      const res = await axios.post("http://127.0.0.1:5000/sentiment", { transcript: fullTranscript });
+      setSentimentResult(res.data.sentiment || res.data.result || JSON.stringify(res.data));
+    } catch (err) {
+      setSentimentResult("Error analyzing sentiment.");
+      console.error(err);
+    } finally {
+      setAnalyzingSentiment(false);
+    }
+  };
+
+  const handleScoring = async () => {
+    const fullTranscript = editableTranscript || transcript || transcriptText;
+    if (!fullTranscript) {
+      alert("Please generate a transcript first.");
+      return;
+    }
+    if (!meetingAgenda) {
+      alert("Please enter the meeting agenda.");
+      return;
+    }
+    setScoring(true);
+    try {
+      const res = await axios.post("http://127.0.0.1:5000/scoring-mechanism", { agenda: meetingAgenda, transcript: fullTranscript });
+      setScoringResult(res.data.score || res.data.result || JSON.stringify(res.data));
+    } catch (err) {
+      setScoringResult("Error scoring meeting.");
+      console.error(err);
+    } finally {
+      setScoring(false);
+    }
+  };
+
   const DownloadButton = ({ content, filename }) => {
     const handleDownload = () => {
       const element = document.createElement("a");
@@ -601,26 +646,45 @@ const MeetingMinutesGenerator = () => {
         <div className="mt-6 flex gap-4">
           <button
             onClick={handleGenerateSummary}
-            className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-800"
+            style={{ background: 'linear-gradient(90deg,rgb(9, 10, 13) 0%,rgb(43, 54, 76) 100%)' }}
+            className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
             disabled={generatingSummary}
           >
-            {generatingSummary ? "Generating summary..." : "Generate Summary"}
+            {generatingSummary ? "Generating..." : "Generate Summary"}
           </button>
 
           <button
             onClick={handleGenerateActionItems}
-            className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-800"
+            style={{ background: 'linear-gradient(90deg,rgb(33, 34, 38) 0%,rgb(49, 65, 85) 100%)' }}
+            className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
             disabled={generatingActions}
           >
-            {generatingActions ? "Generating action items..." : "Generate Action Items"}
+            {generatingActions ? "Generating..." : "Generate Action Items"}
           </button>
 
           <button
             onClick={handleGenerateMinutes}
-            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-800"
+            style={{ background: 'linear-gradient(90deg, #314755 0%, #6b8dd6 100%)' }}
+            className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
             disabled={generatingMinutes}
           >
-            {generatingMinutes ? "Generating Meeting Minutes..." : "Generate Meeting Minutes"}
+            {generatingMinutes ? "Generating..." : "Generate Meeting Minutes"}
+          </button>
+          <button
+            onClick={handleSentimentAnalysis}
+            style={{ background: 'linear-gradient(90deg, #6b8dd6 0%, #48c6ef 100%)' }}
+            className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
+            disabled={analyzingSentiment}
+          >
+            {analyzingSentiment ? "Analyzing Sentiment..." : "Sentiment Analysis"}
+          </button>
+          <button
+            onClick={handleScoring}
+            style={{ background: 'linear-gradient(90deg,rgb(72, 153, 239) 0%,rgb(177, 184, 246) 100%)' }}
+            className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
+            disabled={scoring}
+          >
+            {scoring ? "Scoring..." : "Scoring Mechanism"}
           </button>
         </div>
       )}
@@ -672,6 +736,29 @@ const MeetingMinutesGenerator = () => {
             onChange={(e) => setEditableMeetingMinutes(e.target.value)}
             className="w-full p-2 border rounded whitespace-pre-wrap"
             rows={15}
+          />
+        </div>
+      )}
+
+      {sentimentResult && (
+        <div className="mt-6 bg-gray-50 p-4 border rounded">
+          <h2 className="text-xl font-semibold mb-2">Sentiment Analysis</h2>
+          <textarea
+            value={sentimentResult}
+            readOnly
+            className="w-full p-2 border rounded whitespace-pre-wrap"
+            rows={4}
+          />
+        </div>
+      )}
+      {scoringResult && (
+        <div className="mt-6 bg-gray-50 p-4 border rounded">
+          <h2 className="text-xl font-semibold mb-2">Scoring Mechanism</h2>
+          <textarea
+            value={scoringResult}
+            readOnly
+            className="w-full p-2 border rounded whitespace-pre-wrap"
+            rows={4}
           />
         </div>
       )}
