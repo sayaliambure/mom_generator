@@ -8,7 +8,7 @@ const MeetingMinutesGenerator = () => {
   const [file, setFile] = useState(null);
   const [meetingTitle, setMeetingTitle] = useState("");
   const [meetingDate, setMeetingDate] = useState("");
-  // const [attendees, setAttendees] = useState("");
+  const [meet_attendees, setMeetAttendees] = useState("");
   const [meetingAgenda, setAgenda] = useState("");
   const [transcript, setTranscript] = useState("");
   const [liveTranscript, setLiveTranscript] = useState("");
@@ -20,30 +20,22 @@ const MeetingMinutesGenerator = () => {
   const [transcriptText, setTranscriptText] = useState('');
   const [summary, setSummary] = useState("");
   const [actionItems, setActionItems] = useState("");
+  const [meetingMinutes, setMeetingMinutes] = useState("");
   const [generatingSummary, setGeneratingSummary] = useState(false);
   const [generatingActions, setGeneratingActions] = useState(false);
+  const [generatingMinutes, setGeneratingMinutes] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [notes, setNotes] = useState('');
   const [editableTranscript, setEditableTranscript] = useState("");
   const [editableSummary, setEditableSummary] = useState("");
   const [editableActionItems, setEditableActionItems] = useState("");
+  const [editableMeetingMinutes, setEditableMeetingMinutes] = useState("");
   const [identifySpeakers, setIdentifySpeakers] = useState(false);
-const [attendees, setAttendees] = useState([{ name: "", sample: null }]);
-const [audioURL, setAudioURL] = useState(null);
-
-const mediaRecorderRef = useRef(null);
-const audioChunksRef = useRef([]);
-const streamRef = useRef(null);
-
-// Helper function to clean up media recording
-const stopMediaRecording = () => {
-  if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-    mediaRecorderRef.current.stop();
-  }
-  if (streamRef.current) {
-    streamRef.current.getTracks().forEach(track => track.stop());
-  }
-};
+  const [attendees, setAttendees] = useState([{ name: "", sample: null }]);
+  const [audioURL, setAudioURL] = useState(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const streamRef = useRef(null);
 
   const previousTranscriptRef = useRef(""); // Used to track the last live segment
   const seenLinesRef = useRef(new Set());
@@ -68,82 +60,84 @@ const stopMediaRecording = () => {
     setEditableActionItems(actionItems);
   }, [actionItems]);
 
+  useEffect(() => {
+    setEditableMeetingMinutes(meetingMinutes);
+  }, [meetingMinutes]);
 
-useEffect(() => {
-  return () => {
-    // Clean up any ongoing recording or polling
-    if (intervalId) clearInterval(intervalId);
-    if (isRecording) {
-      stopMediaRecording();
-      // Notify backend to stop transcription if component unmounts during recording
-      fetch("http://127.0.0.1:5000/stop_realtime_transcription", { method: "POST" })
-        .catch(err => console.error("Cleanup error:", err));
+  useEffect(() => {
+    return () => {
+      // Clean up any ongoing recording or polling
+      if (intervalId) clearInterval(intervalId);
+      if (isRecording) {
+        stopMediaRecording();
+        // Notify backend to stop transcription if component unmounts during recording
+        fetch("http://127.0.0.1:5000/stop_realtime_transcription", { method: "POST" })
+          .catch(err => console.error("Cleanup error:", err));
+      }
+    };
+  }, [intervalId, isRecording]);
+  
+  const fetchLiveTranscript = async () => {
+    try {
+      const res = await fetch("http://127.0.0.1:5000/get_live_transcript");
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        console.error("Backend error:", errorData);
+        
+        // Automatically stop polling if transcription is inactive
+        if (errorData.status === "error" && errorData.debug === "Stop flag is set") {
+          console.log("Transcription stopped - ending live updates");
+          stopLiveTranscript();
+          setIsLive(false);
+        }
+        return;
+      }
+      
+      const data = await res.json();
+      
+      if (data.status === "success" && data.text) {
+        const newText = data.text.trim();
+        if (newText && newText !== previousTranscriptRef.current) {
+          setLiveTranscript(prev => prev + (prev ? "\n" : "") + newText);
+          previousTranscriptRef.current = newText;
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch live transcript:", err);
+      stopLiveTranscript(); // Stop polling on error
     }
   };
-}, [intervalId, isRecording]);
-  
 
-const fetchLiveTranscript = async () => {
-  try {
-    const res = await fetch("http://127.0.0.1:5000/get_live_transcript");
-    
-    if (!res.ok) {
-      const errorData = await res.json();
-      console.error("Backend error:", errorData);
-      
-      // Automatically stop polling if transcription is inactive
-      if (errorData.status === "error" && errorData.debug === "Stop flag is set") {
-        console.log("Transcription stopped - ending live updates");
-        stopLiveTranscript();
-        setIsLive(false);
-      }
+  const startLiveTranscript = () => {
+    if (!isRecording) {
+      console.error("Cannot show live transcript - not recording");
       return;
     }
     
-    const data = await res.json();
+    if (intervalId) clearInterval(intervalId);
+    setShowLive(true);
     
-    if (data.status === "success" && data.text) {
-      const newText = data.text.trim();
-      if (newText && newText !== previousTranscriptRef.current) {
-        setLiveTranscript(prev => prev + (prev ? "\n" : "") + newText);
-        previousTranscriptRef.current = newText;
+    // Start polling with error handling
+    const id = setInterval(() => {
+      if (isRecording) {
+        fetchLiveTranscript();
+      } else {
+        clearInterval(id);
+        setIntervalId(null);
       }
-    }
-  } catch (err) {
-    console.error("Failed to fetch live transcript:", err);
-    stopLiveTranscript(); // Stop polling on error
-  }
-};
+    }, 1000);
+    
+    setIntervalId(id);
+  };
 
-const startLiveTranscript = () => {
-  if (!isRecording) {
-    console.error("Cannot show live transcript - not recording");
-    return;
-  }
-  
-  if (intervalId) clearInterval(intervalId);
-  setShowLive(true);
-  
-  // Start polling with error handling
-  const id = setInterval(() => {
-    if (isRecording) {
-      fetchLiveTranscript();
-    } else {
-      clearInterval(id);
+  const stopLiveTranscript = () => {
+    setShowLive(false);
+    if (intervalId) {
+      clearInterval(intervalId);
       setIntervalId(null);
     }
-  }, 1000);
-  
-  setIntervalId(id);
-};
-
-const stopLiveTranscript = () => {
-  setShowLive(false);
-  if (intervalId) {
-    clearInterval(intervalId);
-    setIntervalId(null);
-  }
-};
+  };
 
   const getStoredTranscript = async () => {
     try {
@@ -161,124 +155,122 @@ const stopLiveTranscript = () => {
     setMode("upload");
   };
 
-const startRecording = async () => {
-  try {
-    // Reset previous state
-    setLiveTranscript("");
-    previousTranscriptRef.current = "";
-    seenLinesRef.current = new Set();
-    setAudioURL(null);
-    
-    // Start audio recording
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const mediaRecorder = new MediaRecorder(stream);
-    const audioChunks = [];
-    
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        audioChunks.push(event.data);
-      }
-    };
-    
-    mediaRecorderRef.current = mediaRecorder;
-    audioChunksRef.current = audioChunks;
-    streamRef.current = stream;
-    
-    mediaRecorder.start(1000); // Request data every second
-    
-    // Start transcription
-    const res = await fetch("http://127.0.0.1:5000/start_realtime_transcription", { 
-      method: "POST",
-      headers: { "Content-Type": "application/json" }
-    });
-    
-    if (res.ok) {
-      setIsLive(true);
-      setIsRecording(true);
-    } else {
-      throw new Error("Failed to start transcription");
-    }
-  } catch (err) {
-    console.error("Recording error:", err);
-    stopMediaRecording();
-    alert("Error starting recording: " + err.message);
-  }
-};
-
-const stopRecording = async () => {
-  try {
-    // First stop the live transcript polling
-    stopLiveTranscript();
-    
-    // Then stop the transcription
-    const res = await fetch("http://127.0.0.1:5000/stop_realtime_transcription", { 
-      method: "POST" 
-    });
-    
-    if (res.ok) {
-      const data = await res.json();
-      setIsLive(false);
-      setIsRecording(false);
-      setTranscript(data.transcript);
+  const startRecording = async () => {
+    try {
+      // Reset previous state
+      setLiveTranscript("");
+      previousTranscriptRef.current = "";
+      seenLinesRef.current = new Set();
+      setAudioURL(null);
       
-      if (data.audio_path) {
-        const audioFilename = data.audio_path.split('/').pop();
-        setAudioURL(`http://127.0.0.1:5000/live_recored_meet_audio/${audioFilename}`);
-      }
+      // Start audio recording
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      const audioChunks = [];
       
-      // Clean up media resources
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunks.push(event.data);
+        }
+      };
+      
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = audioChunks;
+      streamRef.current = stream;
+      
+      mediaRecorder.start(1000); // Request data every second
+      
+      // Start transcription
+      const res = await fetch("http://127.0.0.1:5000/start_realtime_transcription", { 
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+      
+      if (res.ok) {
+        setIsLive(true);
+        setIsRecording(true);
+      } else {
+        throw new Error("Failed to start transcription");
+      }
+    } catch (err) {
+      console.error("Recording error:", err);
       stopMediaRecording();
-    } else {
-      console.error("Failed to stop transcription");
+      alert("Error starting recording: " + err.message);
     }
-  } catch (err) {
-    console.error("Error stopping recording:", err);
-  }
-};
+  };
 
+  const stopRecording = async () => {
+    try {
+      // First stop the live transcript polling
+      stopLiveTranscript();
+      
+      // Then stop the transcription
+      const res = await fetch("http://127.0.0.1:5000/stop_realtime_transcription", { 
+        method: "POST" 
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setIsLive(false);
+        setIsRecording(false);
+        setTranscript(data.transcript);
+        
+        if (data.audio_path) {
+          const audioFilename = data.audio_path.split('/').pop();
+          setAudioURL(`http://127.0.0.1:5000/live_recored_meet_audio/${audioFilename}`);
+        }
+        
+        // Clean up media resources
+        stopMediaRecording();
+      } else {
+        console.error("Failed to stop transcription");
+      }
+    } catch (err) {
+      console.error("Error stopping recording:", err);
+    }
+  };
 
   const handleGenerate = async () => {
-  if (mode === "upload" && !file) {
-    alert("Please upload a file first.");
-    return;
-  }
-
-  const formData = new FormData();
-  if (file) formData.append("file", file);
-
-  if (identifySpeakers) {
-  formData.append("speaker_identification", "true");
-
-  for (let i = 0; i < attendees.length; i++) {
-    const att = attendees[i];
-    if (!att.name || !att.sample) {
-      alert(`Please provide name and sample for attendee ${i + 1}`);
+    if (mode === "upload" && !file) {
+      alert("Please upload a file first.");
       return;
     }
-    formData.append(`attendee_names`, att.name);
-    formData.append(`samples`, att.sample);
-  }
-}
 
-  setLoading(true);
-  try {
-    const res = await fetch("http://127.0.0.1:5000/transcribe", {
-      method: "POST",
-      body: formData,
-    });
-    const data = await res.json();
-    if (res.ok) {
-      setTranscript(data.transcript);
-    } else {
-      alert(data.error || "Transcription failed");
+    const formData = new FormData();
+    if (file) formData.append("file", file);
+
+    if (identifySpeakers) {
+      formData.append("speaker_identification", "true");
+
+      for (let i = 0; i < attendees.length; i++) {
+        const att = attendees[i];
+        if (!att.name || !att.sample) {
+          alert(`Please provide name and sample for attendee ${i + 1}`);
+          return;
+        }
+        formData.append(`attendee_names`, att.name);
+        formData.append(`samples`, att.sample);
+      }
     }
-  } catch (err) {
-    alert("Server error");
-  } finally {
-    setLoading(false);
-  }
-};
 
+    setLoading(true);
+    try {
+      const res = await fetch("http://127.0.0.1:5000/transcribe", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTranscript(data.transcript);
+      } else {
+        alert(data.error || "Transcription failed");
+      }
+    } catch (err) {
+      alert("Server error");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleGenerateSummary = async () => {
     setGeneratingSummary(true);
@@ -308,6 +300,42 @@ const stopRecording = async () => {
     }
   };
 
+  const handleGenerateMinutes = async () => {
+    setGeneratingMinutes(true);
+    const fullTranscript = editableTranscript || transcript || transcriptText;
+    if (!fullTranscript) {
+      alert("Please generate a transcript first.");
+      return;
+    }
+    const payload = {
+      agenda: meetingAgenda, 
+      transcript: {
+        value: fullTranscript,
+      }
+    };
+    if (meetingDate) {
+      payload.transcript.date = meetingDate;
+    }
+    if (meetingTitle) {
+      payload.transcript.title = meetingTitle;
+    }
+    if (meet_attendees) {
+      payload.transcript.meet_attendees = meet_attendees; 
+    }
+
+    try {
+      const res = await axios.post("http://127.00.0.1:5000/minutes-of-meeting", payload);
+      setMeetingMinutes(res.data.minutes_of_meeting || "Minutes generated successfully!"); 
+      // alert("Meeting minutes sent to API successfully!");
+    } catch (err) {
+      console.error("Error sending meeting minutes to API:", err);
+      alert("Error generating meeting minutes. Please try again.");
+    }
+     finally {
+      setGeneratingMinutes(false);
+    }
+  };
+
   const DownloadButton = ({ content, filename }) => {
     const handleDownload = () => {
       const element = document.createElement("a");
@@ -330,8 +358,15 @@ const stopRecording = async () => {
     );
   };
   
-  
-  
+  // Helper function to clean up media recording
+  const stopMediaRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+    }
+  };
 
   return (
     <div className="max-w-5xl mx-auto mt-10 p-6 bg-white rounded-lg shadow-md relative">
@@ -360,63 +395,57 @@ const stopRecording = async () => {
             {file ? file.name : "Choose File"}
           </label>
 
-
           <div className="mb-4">
-          <label className="inline-flex items-center space-x-2">
-            <input
-              type="checkbox"
-              checked={identifySpeakers}
-              onChange={(e) => setIdentifySpeakers(e.target.checked)}
-            />
-            <span>Identify Speakers</span>
-          </label>
-        </div>
+            <label className="inline-flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={identifySpeakers}
+                onChange={(e) => setIdentifySpeakers(e.target.checked)}
+              />
+              <span>Identify Speakers</span>
+            </label>
+          </div>
 
-{identifySpeakers && (
-  <div className="space-y-4">
-    {attendees.map((attendee, index) => (
-      <div key={index} className="border p-4 rounded-md shadow-sm">
-        <label className="block mb-1 font-medium text-sm">Attendee {index + 1}</label>
-        <input
-          type="text"
-          placeholder="Name"
-          value={attendee.name}
-          onChange={(e) => {
-            const updated = [...attendees];
-            updated[index].name = e.target.value;
-            setAttendees(updated);
-          }}
-          className="w-full border rounded p-2 mb-2"
-        />
-        <input
-          type="file"
-          accept="audio/*"
-          onChange={(e) => {
-            const updated = [...attendees];
-            updated[index].sample = e.target.files[0];
-            setAttendees(updated);
-          }}
-          className="w-full"
-        />
-      </div>
-    ))}
+          {identifySpeakers && (
+            <div className="space-y-4">
+              {attendees.map((attendee, index) => (
+                <div key={index} className="border p-4 rounded-md shadow-sm">
+                  <label className="block mb-1 font-medium text-sm">Attendee {index + 1}</label>
+                  <input
+                    type="text"
+                    placeholder="Name"
+                    value={attendee.name}
+                    onChange={(e) => {
+                      const updated = [...attendees];
+                      updated[index].name = e.target.value;
+                      setAttendees(updated);
+                    }}
+                    className="w-full border rounded p-2 mb-2"
+                  />
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    onChange={(e) => {
+                      const updated = [...attendees];
+                      updated[index].sample = e.target.files[0];
+                      setAttendees(updated);
+                    }}
+                    className="w-full"
+                  />
+                </div>
+              ))}
 
-    <button
-      onClick={(e) => {
-        e.preventDefault();
-        setAttendees([...attendees, { name: "", sample: null }]);
-      }}
-      className="text-sm text-blue-600 mt-2 underline"
-    >
-      + Add Attendee
-    </button>
-  </div>
-)}
-
-
-
-
-
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  setAttendees([...attendees, { name: "", sample: null }]);
+                }}
+                className="text-sm text-blue-600 mt-2 underline"
+              >
+                + Add Attendee
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -442,82 +471,68 @@ const stopRecording = async () => {
                 </button>
               </div>
 
-        <div className="flex items-center gap-2">
-          {!showLive ? (
-            <button
-              onClick={startLiveTranscript}
-              className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded transition"
-            >
-              <EyeIcon className="h-5 w-5" />
-              Show Live Transcript
-            </button>
-          ) : (
-            <button
-              onClick={stopLiveTranscript}
-              className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded transition"
-            >
-              <EyeSlashIcon className="h-5 w-5" />
-              Stop Live Transcript
-            </button>
+              <div className="flex items-center gap-2">
+                {!showLive ? (
+                  <button
+                    onClick={startLiveTranscript}
+                    className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded transition"
+                  >
+                    <EyeIcon className="h-5 w-5" />
+                    Show Live Transcript
+                  </button>
+                ) : (
+                  <button
+                    onClick={stopLiveTranscript}
+                    className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded transition"
+                  >
+                    <EyeSlashIcon className="h-5 w-5" />
+                    Stop Live Transcript
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {showLive && (
+            <div className="w-full max-w-3xl px-4">
+              <h2 className="text-lg font-semibold text-gray-700 mb-2 text-center">
+                Live Transcript
+                {!isRecording && (
+                  <span className="text-sm text-red-500 ml-2">(Recording stopped)</span>
+                )}
+              </h2>
+              <div className="bg-white p-4 rounded-lg shadow-md border border-gray-200 max-h-64 overflow-y-auto">
+                {liveTranscript || (
+                  <p className="text-gray-500">
+                    {isRecording ? "Listening for speech..." : "Recording not active"}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {isRecording && (
+            <div className="flex items-center justify-center gap-2 text-red-500 mb-4">
+              <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+              <span>Recording in progress...</span>
+            </div>
+          )}
+
+          {showLive && isLive && (
+            <div className="flex items-center justify-center gap-2 text-blue-500 mb-4">
+              <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
+              <span>Live transcription active</span>
+            </div>
           )}
         </div>
-      </div>
-    )}
-
-  {/* {showLive && (
-  <div className="w-full max-w-3xl px-4">
-    <h2 className="text-lg font-semibold text-gray-700 mb-2 text-center">Live Transcript</h2>
-    <div className="bg-white p-4 rounded-lg shadow-md border border-gray-200 max-h-64 overflow-y-auto whitespace-pre-wrap text-left text-sm text-gray-800">
-      {liveTranscript ? (
-        liveTranscript.split('\n').map((line, i) => (
-          <p key={i}>{line}</p>
-        ))
-      ) : (
-        <p className="text-gray-500">Listening for speech... (speak clearly)</p>
       )}
-    </div>
-  </div>
-)} */}
-{showLive && (
-  <div className="w-full max-w-3xl px-4">
-    <h2 className="text-lg font-semibold text-gray-700 mb-2 text-center">
-      Live Transcript
-      {!isRecording && (
-        <span className="text-sm text-red-500 ml-2">(Recording stopped)</span>
-      )}
-    </h2>
-    <div className="bg-white p-4 rounded-lg shadow-md border border-gray-200 max-h-64 overflow-y-auto">
-      {liveTranscript || (
-        <p className="text-gray-500">
-          {isRecording ? "Listening for speech..." : "Recording not active"}
-        </p>
-      )}
-    </div>
-  </div>
-)}
 
-{isRecording && (
-  <div className="flex items-center justify-center gap-2 text-red-500 mb-4">
-    <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
-    <span>Recording in progress...</span>
-  </div>
-)}
-
-{showLive && isLive && (
-  <div className="flex items-center justify-center gap-2 text-blue-500 mb-4">
-    <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
-    <span>Live transcription active</span>
-  </div>
-)}
-    
-  </div>
-)}
-{audioURL && (
-  <div className="mt-4">
-    <p className="text-gray-600 mb-2">Recorded Audio:</p>
-    <audio controls src={audioURL} className="w-full" />
-  </div>
-)}
+      {audioURL && (
+        <div className="mt-4">
+          <p className="text-gray-600 mb-2">Recorded Audio:</p>
+          <audio controls src={audioURL} className="w-full" />
+        </div>
+      )}
 
       <input
         type="text"
@@ -532,14 +547,13 @@ const stopRecording = async () => {
         onChange={(e) => setMeetingDate(e.target.value)}
         className="w-full border rounded p-2 mb-4"
       />
-      {/* <textarea
+      <textarea
         placeholder="Attendees (e.g. John Doe, Jane Smith)"
-        value={attendees}
-        onChange={(e) => setAttendees(e.target.value)}
+        value={meet_attendees}
+        onChange={(e) => setMeetAttendees(e.target.value)}
         className="w-full border rounded p-2 mb-4"
         rows={1}
-      /> */}
-
+      />
       <textarea
         placeholder="Meeting Agenda"
         value={meetingAgenda}
@@ -549,32 +563,30 @@ const stopRecording = async () => {
       />
 
       {mode === "upload" ? (
-      <button
-        onClick={handleGenerate}
-        disabled={loading}
-        className={`w-full p-3 text-white font-bold rounded ${loading ? "bg-gray-400" : "bg-black hover:bg-gray-800"}`}
-      >
-        {loading ? "Generating..." : "Generate Transcript"}
-      </button>
+        <button
+          onClick={handleGenerate}
+          disabled={loading}
+          className={`w-full p-3 text-white font-bold rounded ${loading ? "bg-gray-400" : "bg-black hover:bg-gray-800"}`}
+        >
+          {loading ? "Generating..." : "Generate Transcript"}
+        </button>
       ) : (
-      <button
-        onClick={getStoredTranscript}
-        disabled={loading}
-        className={`w-full p-3 text-white font-bold rounded ${loading ? "bg-gray-400" : "bg-black hover:bg-gray-800"}`}
-      >
-        {loading ? "Fetching..." : "Get Transcript"}
-      </button>
+        <button
+          onClick={getStoredTranscript}
+          disabled={loading}
+          className={`w-full p-3 text-white font-bold rounded ${loading ? "bg-gray-400" : "bg-black hover:bg-gray-800"}`}
+        >
+          {loading ? "Fetching..." : "Get Transcript"}
+        </button>
       )}
-
-
 
       {(editableTranscript || transcriptText) && (
         <div className="mt-8 bg-gray-100 p-4 rounded">
           <div className="flex justify-between items-center mb-2">
             <h2 className="text-xl font-semibold">Meeting Transcript</h2>
             <div className="mt-2">
-                <DownloadButton content={transcript} filename="transcript.txt" />
-              </div>
+              <DownloadButton content={transcript} filename="transcript.txt" />
+            </div>
           </div>
           <textarea
             value={editableTranscript}
@@ -584,7 +596,6 @@ const stopRecording = async () => {
           />
         </div>
       )}
-
 
       {(transcript || transcriptText) && (
         <div className="mt-6 flex gap-4">
@@ -603,6 +614,14 @@ const stopRecording = async () => {
           >
             {generatingActions ? "Generating action items..." : "Generate Action Items"}
           </button>
+
+          <button
+            onClick={handleGenerateMinutes}
+            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-800"
+            disabled={generatingMinutes}
+          >
+            {generatingMinutes ? "Generating Meeting Minutes..." : "Generate Meeting Minutes"}
+          </button>
         </div>
       )}
 
@@ -610,9 +629,9 @@ const stopRecording = async () => {
         <div className="mt-6 bg-gray-50 p-4 border rounded">
           <div className="flex justify-between items-center mb-2">
             <h2 className="text-xl font-semibold">Summary</h2>
-              <div className="mt-2">
-                <DownloadButton content={summary} filename="summary.txt" />
-              </div>
+            <div className="mt-2">
+              <DownloadButton content={summary} filename="summary.txt" />
+            </div>
           </div>
           <textarea
             value={editableSummary}
@@ -640,6 +659,22 @@ const stopRecording = async () => {
         </div>
       )}
 
+      {meetingMinutes && (
+        <div className="mt-6 bg-gray-50 p-4 border rounded">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-xl font-semibold">Meeting Minutes</h2>
+            <div className="mt-2">
+              <DownloadButton content={editableMeetingMinutes} filename="meeting_minutes.txt" />
+            </div>
+          </div>
+          <textarea
+            value={editableMeetingMinutes}
+            onChange={(e) => setEditableMeetingMinutes(e.target.value)}
+            className="w-full p-2 border rounded whitespace-pre-wrap"
+            rows={15}
+          />
+        </div>
+      )}
 
       <button
         onClick={() => setShowNotes(true)}
@@ -653,27 +688,22 @@ const stopRecording = async () => {
         Take Notes
       </button>
 
-
-{/* Notes Popup */}
-{showNotes && (
-  <div className="fixed bottom-24 right-8 w-96 bg-white shadow-lg rounded-lg p-4 z-50">
-    <div className="flex justify-between items-center mb-2">
-      <h2 className="text-lg font-semibold">Quick Notes</h2>
-      <button onClick={() => setShowNotes(false)}>
-        <XMarkIcon className="h-5 w-5 text-gray-500 hover:text-gray-700" />
-      </button>
-    </div>
-    <textarea
-      className="w-full h-96 p-2 border border-gray-300 rounded"
-      value={notes}
-      onChange={(e) => setNotes(e.target.value)}
-      placeholder="Type your notes here..."
-    />
-  </div>
-)}
-
-
-        
+      {showNotes && (
+        <div className="fixed bottom-24 right-8 w-96 bg-white shadow-lg rounded-lg p-4 z-50">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-lg font-semibold">Quick Notes</h2>
+            <button onClick={() => setShowNotes(false)}>
+              <XMarkIcon className="h-5 w-5 text-gray-500 hover:text-gray-700" />
+            </button>
+          </div>
+          <textarea
+            className="w-full h-96 p-2 border border-gray-300 rounded"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Type your notes here..."
+          />
+        </div>
+      )}
     </div>
   );
 };

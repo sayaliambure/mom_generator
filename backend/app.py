@@ -163,11 +163,12 @@ def action_items():
 def minutes_of_meeting():
     data = request.json
     transcript = data.get("transcript")
+    agenda = data.get("agenda")
     if not transcript:
         return jsonify({"error": "No transcript provided"}), 400
     print("Generating minutes of meeting...")
     task_prompt = "Generate minutes of the meeting from the transcript below. Include sections like Date, Attendees, Agenda if applicable, include summary of any action items or decisions made."
-    mom = query_nvidia_model(transcript, task_prompt)
+    mom = query_nvidia_scoring_model(transcript, agenda, task_prompt)
     if mom is None:
         return jsonify({"error": "Failed to get minutes of meeting from NVIDIA API"}), 500
 
@@ -182,11 +183,11 @@ def sentiment():
         return jsonify({"error": "No transcript provided"}), 400
     print("Generating Sentiment Analysis...")
     task_prompt = "Give the sentiment analysis of given meeting transcript: "
-    mom = query_nvidia_model(transcript, task_prompt)
-    if mom is None:
-        return jsonify({"error": "Failed to get minutes of meeting from NVIDIA API"}), 500
+    sentiment = query_nvidia_model(transcript, task_prompt)
+    if sentiment is None:
+        return jsonify({"error": "Failed to get sentiment analysis from NVIDIA API"}), 500
 
-    return jsonify({"minutes_of_meeting": mom})
+    return jsonify({"sentiment": sentiment})
 
 
 @app.route('/scoring-mechanism', methods=['POST'])
@@ -198,11 +199,11 @@ def scoring_mechanism():
         return jsonify({"error": "No transcript or agenda provided"}), 400
     print("Generating Meeting Score...")
     task_prompt = "Give a score on how well the meeting was aligned with the agenda."
-    mom = query_nvidia_scoring_model(transcript, agenda, task_prompt)
-    if mom is None:
-        return jsonify({"error": "Failed to get minutes of meeting from NVIDIA API"}), 500
+    score = query_nvidia_scoring_model(transcript, agenda, task_prompt)
+    if score is None:
+        return jsonify({"error": "Failed to get score from NVIDIA API"}), 500
 
-    return jsonify({"minutes_of_meeting": mom})
+    return jsonify({"score": score})
 
 
 @app.route('/download/<filename>')
