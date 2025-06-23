@@ -10,7 +10,7 @@ from datetime import datetime
 from flask_cors import CORS
 import torch
 import subprocess
-print('GPU on mac? ', torch.backends.mps.is_available())  # True = Apple GPU available
+# print('GPU on mac? ', torch.backends.mps.is_available())  # True = Apple GPU available
 
 
 app = Flask(__name__)

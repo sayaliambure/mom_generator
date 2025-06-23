@@ -9,7 +9,6 @@ export default function MeetingDetail({ meeting, onBack }) {
         <div className="mb-2">
           <strong>Recording:</strong>
           <audio controls src={meeting.audio_url} className="w-full" />
-          <a href={meeting.audio_url} download className="text-blue-600 underline ml-2">Download</a>
         </div>
       )}
       <div className="mb-2"><strong>Attendees:</strong> {meeting.attendees}</div>

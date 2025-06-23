@@ -389,14 +389,14 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
     <div className="relative min-h-screen bg-gray-100">
       <button
         onClick={handleLogout}
-        className="absolute top-4 right-4 bg-gradient-to-r from-black to-blue-600 text-white px-4 py-2 rounded shadow"
+        className="absolute top-4 right-2 bg-gray-800 text-white px-4 py-2 rounded shadow"
       >
         Logout
       </button>
       {onViewProfile && (
         <button
           onClick={onViewProfile}
-          className="absolute top-4 right-32 bg-gradient-to-r from-blue-600 to-cyan-500 text-white px-4 py-2 rounded shadow"
+          className="absolute top-4 right-28 bg-gray-800 text-white px-4 py-2 rounded shadow"
         >
           View Profile
         </button>
@@ -666,42 +666,37 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
           <div className="mt-6 flex gap-4">
             <button
               onClick={handleGenerateSummary}
-              style={{ background: 'linear-gradient(90deg,rgb(9, 10, 13) 0%,rgb(43, 54, 76) 100%)' }}
-              className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
+              className="bg-gray-800 text-white px-4 py-2 rounded hover:bg-blue-800"
               disabled={generatingSummary}
             >
-              {generatingSummary ? "Generating..." : "Generate Summary"}
+              {generatingSummary ? "Generating Summary..." : "Generate Summary"}
             </button>
 
             <button
               onClick={handleGenerateActionItems}
-              style={{ background: 'linear-gradient(90deg,rgb(33, 34, 38) 0%,rgb(49, 65, 85) 100%)' }}
-              className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
+              className="bg-gray-800 text-white px-4 py-2 rounded hover:bg-blue-800"
               disabled={generatingActions}
             >
-              {generatingActions ? "Generating..." : "Generate Action Items"}
+              {generatingActions ? "Generating Action Items..." : "Generate Action Items"}
             </button>
 
             <button
               onClick={handleGenerateMinutes}
-              style={{ background: 'linear-gradient(90deg, #314755 0%, #6b8dd6 100%)' }}
-              className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
+              className="bg-gray-800 text-white px-4 py-2 rounded hover:bg-blue-800"
               disabled={generatingMinutes}
             >
-              {generatingMinutes ? "Generating..." : "Generate Meeting Minutes"}
+              {generatingMinutes ? "Generating Minutes..." : "Generate Minutes"}
             </button>
             <button
               onClick={handleSentimentAnalysis}
-              style={{ background: 'linear-gradient(90deg, #6b8dd6 0%, #48c6ef 100%)' }}
-              className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
+              className="bg-gray-800 text-white px-4 py-2 rounded hover:bg-blue-800"
               disabled={analyzingSentiment}
             >
               {analyzingSentiment ? "Analyzing Sentiment..." : "Sentiment Analysis"}
             </button>
             <button
               onClick={handleScoring}
-              style={{ background: 'linear-gradient(90deg,rgb(72, 153, 239) 0%,rgb(177, 184, 246) 100%)' }}
-              className="text-white px-4 py-2 rounded hover:opacity-90 transition border-0"
+              className="bg-gray-800 text-white px-4 py-2 rounded hover:bg-blue-800"
               disabled={scoring}
             >
               {scoring ? "Scoring..." : "Scoring Mechanism"}
@@ -785,7 +780,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
 
         {user && (transcript || summary || actionItems || meetingMinutes) && (
           <button
-            className="mt-4 bg-green-600 text-white px-4 py-2 rounded"
+            className="mt-4 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
             onClick={async () => {
               try {
                 console.log('Saving meeting for user:', user?.id);
