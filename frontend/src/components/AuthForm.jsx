@@ -8,7 +8,6 @@ export default function AuthForm({ onAuth }) {
   const [error, setError] = useState('');
   const [meetings, setMeetings] = useState([]);
   const user = supabase.auth.getUser(); // or from session
-  console.log('QWERD', user);
 
 
   const handleSubmit = async (e) => {

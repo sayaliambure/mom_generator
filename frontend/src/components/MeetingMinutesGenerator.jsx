@@ -77,9 +77,6 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
       if (intervalId) clearInterval(intervalId);
       if (isRecording) {
         stopMediaRecording();
-        // Notify backend to stop transcription if component unmounts during recording
-        fetch("http://127.0.0.1:5000/stop_realtime_transcription", { method: "POST" })
-          .catch(err => console.error("Cleanup error:", err));
       }
     };
   }, [intervalId, isRecording]);
@@ -164,76 +161,44 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
 
   const startRecording = async () => {
     try {
-      // Reset previous state
-      setLiveTranscript("");
-      previousTranscriptRef.current = "";
-      seenLinesRef.current = new Set();
       setAudioURL(null);
-      
-      // Start audio recording
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
       const audioChunks = [];
-      
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunks.push(event.data);
         }
       };
-      
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = audioChunks;
       streamRef.current = stream;
-      
-      mediaRecorder.start(1000); // Request data every second
-      
-      // Start transcription
-      const res = await fetch("http://127.0.0.1:5000/start_realtime_transcription", { 
-        method: "POST",
-        headers: { "Content-Type": "application/json" }
-      });
-      
-      if (res.ok) {
-        setIsLive(true);
-        setIsRecording(true);
-      } else {
-        throw new Error("Failed to start transcription");
-      }
+      mediaRecorder.start();
+      setIsRecording(true);
     } catch (err) {
-      console.error("Recording error:", err);
-      stopMediaRecording();
-      alert("Error starting recording: " + err.message);
+      alert('Error starting recording: ' + err.message);
     }
   };
 
   const stopRecording = async () => {
     try {
-      // First stop the live transcript polling
-      stopLiveTranscript();
-      
-      // Then stop the transcription
-      const res = await fetch("http://127.0.0.1:5000/stop_realtime_transcription", { 
-        method: "POST" 
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        setIsLive(false);
+      const mediaRecorder = mediaRecorderRef.current;
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        await new Promise((resolve) => {
+          mediaRecorder.onstop = resolve;
+          mediaRecorder.stop();
+        });
         setIsRecording(false);
-        setTranscript(data.transcript);
-        
-        if (data.audio_path) {
-          const audioFilename = data.audio_path.split('/').pop();
-          setAudioURL(`http://127.0.0.1:5000/live_recored_meet_audio/${audioFilename}`);
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        setFile(new File([audioBlob], `recording_${Date.now()}.webm`, { type: 'audio/webm' }));
+        setAudioURL(URL.createObjectURL(audioBlob));
+        // Clean up stream
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
         }
-        
-        // Clean up media resources
-        stopMediaRecording();
-      } else {
-        console.error("Failed to stop transcription");
       }
     } catch (err) {
-      console.error("Error stopping recording:", err);
+      alert('Error stopping recording: ' + err.message);
     }
   };
 
@@ -450,18 +415,25 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
         </div>
 
         {mode === "upload" && (
-          <div className="border rounded-lg p-6 border-dashed border-gray-300 bg-gray-50 mb-6 text-center">
-            <input
-              type="file"
-              accept="audio/*,video/*"
-              onChange={handleFileChange}
-              className="hidden"
-              id="fileInput"
-            />
-            <label htmlFor="fileInput" className="cursor-pointer text-blue-600 font-semibold">
-              {file ? file.name : "Choose File"}
-            </label>
-
+          <>
+            <div className="border rounded-lg p-6 border-dashed border-gray-300 bg-gray-50 mb-6 text-center">
+              <input
+                type="file"
+                accept="audio/*,video/*"
+                onChange={handleFileChange}
+                className="hidden"
+                id="fileInput"
+              />
+              <label htmlFor="fileInput" className="cursor-pointer text-blue-600 font-semibold">
+                {file ? file.name : "Choose File"}
+              </label>
+            </div>
+            {file && audioURL && (
+              <div className="mt-4 w-full">
+                <p className="text-gray-600 mb-2">Audio Preview:</p>
+                <audio controls src={audioURL} className="w-full" />
+              </div>
+            )}
             <div className="mb-4">
               <label className="inline-flex items-center space-x-2">
                 <input
@@ -472,7 +444,6 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                 <span>Identify Speakers</span>
               </label>
             </div>
-
             {identifySpeakers && (
               <div className="space-y-4">
                 {attendees.map((attendee, index) => (
@@ -501,7 +472,6 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                     />
                   </div>
                 ))}
-
                 <button
                   onClick={(e) => {
                     e.preventDefault();
@@ -513,92 +483,86 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                 </button>
               </div>
             )}
-          </div>
+          </>
         )}
 
         {mode === "record" && (
-          <div className="flex flex-col items-center mb-6 space-y-4">
-            {!isRecording ? (
-              <button
-                onClick={startRecording}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition"
-              >
-                <MicrophoneIcon className="h-5 w-5" />
-                Start Recording
-              </button>
-            ) : (
-              <div className="flex flex-col sm:flex-row sm:space-x-4 space-y-2 sm:space-y-0">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={stopRecording}
-                    className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded transition"
-                  >
-                    <StopIcon className="h-5 w-5" />
-                    Stop Recording
-                  </button>
+          <>
+            <div className="flex flex-col items-center mb-6 space-y-4 w-full">
+              {!isRecording ? (
+                <button
+                  onClick={startRecording}
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition"
+                >
+                  <MicrophoneIcon className="h-5 w-5" />
+                  Start Recording
+                </button>
+              ) : (
+                <button
+                  onClick={stopRecording}
+                  className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded transition"
+                >
+                  <StopIcon className="h-5 w-5" />
+                  Stop Recording
+                </button>
+              )}
+              {audioURL && (
+                <div className="mt-4 w-full">
+                  <p className="text-gray-600 mb-2">Recorded Audio:</p>
+                  <audio controls src={audioURL} className="w-full" />
                 </div>
-
-                <div className="flex items-center gap-2">
-                  {!showLive ? (
-                    <button
-                      onClick={startLiveTranscript}
-                      className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded transition"
-                    >
-                      <EyeIcon className="h-5 w-5" />
-                      Show Live Transcript
-                    </button>
-                  ) : (
-                    <button
-                      onClick={stopLiveTranscript}
-                      className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded transition"
-                    >
-                      <EyeSlashIcon className="h-5 w-5" />
-                      Stop Live Transcript
-                    </button>
-                  )}
-                </div>
+              )}
+            </div>
+            <div className="mb-4">
+              <label className="inline-flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={identifySpeakers}
+                  onChange={(e) => setIdentifySpeakers(e.target.checked)}
+                />
+                <span>Identify Speakers</span>
+              </label>
+            </div>
+            {identifySpeakers && (
+              <div className="space-y-4 w-full">
+                {attendees.map((attendee, index) => (
+                  <div key={index} className="border p-4 rounded-md shadow-sm">
+                    <label className="block mb-1 font-medium text-sm">Attendee {index + 1}</label>
+                    <input
+                      type="text"
+                      placeholder="Name"
+                      value={attendee.name}
+                      onChange={(e) => {
+                        const updated = [...attendees];
+                        updated[index].name = e.target.value;
+                        setAttendees(updated);
+                      }}
+                      className="w-full border rounded p-2 mb-2"
+                    />
+                    <input
+                      type="file"
+                      accept="audio/*"
+                      onChange={(e) => {
+                        const updated = [...attendees];
+                        updated[index].sample = e.target.files[0];
+                        setAttendees(updated);
+                      }}
+                      className="w-full"
+                    />
+                  </div>
+                ))}
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setAttendees([...attendees, { name: "", sample: null }]);
+                  }}
+                  className="text-sm text-blue-600 mt-2 underline"
+                >
+                  + Add Attendee
+                </button>
               </div>
             )}
-
-            {showLive && (
-              <div className="w-full max-w-3xl px-4">
-                <h2 className="text-lg font-semibold text-gray-700 mb-2 text-center">
-                  Live Transcript
-                  {!isRecording && (
-                    <span className="text-sm text-red-500 ml-2">(Recording stopped)</span>
-                  )}
-                </h2>
-                <div className="bg-white p-4 rounded-lg shadow-md border border-gray-200 max-h-64 overflow-y-auto">
-                  {liveTranscript || (
-                    <p className="text-gray-500">
-                      {isRecording ? "Listening for speech..." : "Recording not active"}
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {isRecording && (
-              <div className="flex items-center justify-center gap-2 text-red-500 mb-4">
-                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
-                <span>Recording in progress...</span>
-              </div>
-            )}
-
-            {showLive && isLive && (
-              <div className="flex items-center justify-center gap-2 text-blue-500 mb-4">
-                <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
-                <span>Live transcription active</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {audioURL && (
-          <div className="mt-4">
-            <p className="text-gray-600 mb-2">Recorded Audio:</p>
-            <audio controls src={audioURL} className="w-full" />
-          </div>
+          </>
         )}
 
         <input
@@ -639,11 +603,45 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
           </button>
         ) : (
           <button
-            onClick={getStoredTranscript}
+            onClick={async () => {
+              if (!file) {
+                alert("Please record audio first.");
+                return;
+              }
+              setLoading(true);
+              const formData = new FormData();
+              formData.append("file", file);
+              formData.append("mode", "record");
+              if (identifySpeakers) {
+                formData.append("speaker_identification", "true");
+                attendees.forEach((attendee) => {
+                  formData.append("attendee_names", attendee.name);
+                  if (attendee.sample) {
+                    formData.append("samples", attendee.sample);
+                  }
+                });
+              }
+              try {
+                const res = await fetch("http://127.0.0.1:5000/transcribe", {
+                  method: "POST",
+                  body: formData,
+                });
+                const data = await res.json();
+                if (res.ok) {
+                  setTranscript(data.transcript);
+                } else {
+                  alert(data.error || "Transcription failed");
+                }
+              } catch (err) {
+                alert("Server error");
+              } finally {
+                setLoading(false);
+              }
+            }}
             disabled={loading}
             className={`w-full p-3 text-white font-bold rounded ${loading ? "bg-gray-400" : "bg-black hover:bg-gray-800"}`}
           >
-            {loading ? "Fetching..." : "Get Transcript"}
+            {loading ? "Generating..." : "Get Transcript"}
           </button>
         )}
 

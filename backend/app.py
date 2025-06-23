@@ -1,18 +1,15 @@
 from flask import Flask, request, render_template, jsonify, send_file, send_from_directory
-import requests
-import os, uuid, time
+import os, uuid
 import soundfile as sf
-import numpy as np
 from werkzeug.utils import secure_filename
 import threading
 from transcript_gen import generate_transcript_faster_whisper, diarize_and_transcribe, speaker_rec_and_transcribe
+from llm_generate import query_nvidia_model, query_nvidia_scoring_model
 from custom_transcriber import CustomTranscriber
 from datetime import datetime
-from summarizer import summarize_long_text
-# from action_items import generate_action_items
-from llm_generate import query_nvidia_model, query_nvidia_scoring_model
 from flask_cors import CORS
 import torch
+import subprocess
 print('GPU on mac? ', torch.backends.mps.is_available())  # True = Apple GPU available
 
 
@@ -54,10 +51,27 @@ def transcribe():
     if file.filename == '':
         return jsonify({"error": "No file selected"}), 400
 
+    # Determine save folder based on mode
+    mode = request.form.get('mode', 'upload')
+    if mode == 'record':
+        save_folder = LIVE_RECORDED_MEET_FOLDER
+    else:
+        save_folder = app.config['UPLOAD_FOLDER']
+
     filename = secure_filename(file.filename)
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    filepath = os.path.join(save_folder, filename)
     file.save(filepath)
-    print('file saved successfully')
+    print(f'file saved successfully to {filepath}')
+
+    # If file is .webm, convert to .wav
+    if filename.endswith('.webm'):
+        wav_path = filepath.rsplit('.', 1)[0] + '.wav'
+        try:
+            subprocess.run(['ffmpeg', '-y', '-i', filepath, wav_path], check=True)
+            print(f'Converted {filepath} to {wav_path}')
+            filepath = wav_path  # Use the wav file for transcription
+        except Exception as e:
+            return jsonify({"error": f"Failed to convert webm to wav: {e}"}), 500
 
     # Check if speaker identification is requested
     speaker_identification = request.form.get('speaker_identification') == 'true'
@@ -80,17 +94,9 @@ def transcribe():
     combined_transcript = "\n".join(
         [f"[{seg['speaker']} - {seg['start']:.2f}s to {seg['end']:.2f}s]: {seg['text']}" for seg in speaker_transcripts])
 
-    transcript_filename = f"transcript_{uuid.uuid4()}.txt"
-    transcript_filepath = os.path.join(OUTPUT_FOLDER, transcript_filename)
-    with open(transcript_filepath, 'w', encoding='utf-8') as f:
-        for segment in speaker_transcripts:
-            f.write(f"[{segment['speaker']} - {segment['start']:.2f}s to {segment['end']:.2f}s]: {segment['text']}\n")
-
-    print("written and saved transcript file")
     return jsonify({
         "transcript": combined_transcript,
         "speaker_segments": speaker_transcripts,
-        "transcript_file": transcript_filename,
         "model": "whisper + diarization",
         "transcription time": transcription_time
     })
