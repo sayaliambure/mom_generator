@@ -1,7 +1,16 @@
-export default function MeetingDetail({ meeting, onBack }) {
+export default function MeetingDetail({ meeting, onBack, onDelete }) {
   if (!meeting) return null;
   return (
-    <div className="p-6">
+    <div className="p-6 relative">
+      {onDelete && (
+        <button
+          onClick={() => onDelete(meeting)}
+          // className="absolute top-4 right-4 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded shadow"
+          className="absolute top-6 right-8 mb-4 text-red-500 underline"
+        >
+          Delete
+        </button>
+      )}
       <button onClick={onBack} className="mb-4 text-blue-600 underline">Back to meetings</button>
       <h2 className="text-2xl font-bold mb-2">{meeting.title}</h2>
       <div className="mb-2 text-gray-600">{meeting.date}</div>

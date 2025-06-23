@@ -5,9 +5,38 @@ import UserProfile from './components/UserProfile';
 import MeetingDetail from './components/MeetingDetail';
 import MeetingMinutesGenerator from './components/MeetingMinutesGenerator';
 
+function NoteDetail({ note, onBack }) {
+  if (!note) return null;
+  const handleDelete = async () => {
+    if (!window.confirm('Are you sure you want to delete this note?')) return;
+    await supabase.from('notes').delete().eq('id', note.id);
+    onBack();
+  };
+  return (
+    <div className="p-6 max-w-2xl mx-auto relative">
+      <button
+        onClick={handleDelete}
+        // className="absolute top-4 right-4 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded shadow"
+        className="absolute top-4 right-4 mb-4 text-red-500 underline"
+      >
+        Delete
+      </button>
+      <button onClick={onBack} className="mb-4 text-blue-600 underline">Back to notes</button>
+      <h2 className="text-2xl font-bold mb-2">Note</h2>
+      <div className="mb-2 text-gray-600">
+        {note.created_at && new Date(note.created_at).toLocaleString()}
+      </div>
+      <div className="bg-gray-100 p-4 rounded whitespace-pre-line text-lg">
+        {note.content}
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [session, setSession] = useState(null);
   const [selectedMeeting, setSelectedMeeting] = useState(null);
+  const [selectedNote, setSelectedNote] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
 
   useEffect(() => {
@@ -20,16 +49,25 @@ function App() {
     };
   }, []);
 
+  // Delete handler for meetings
+  const handleDeleteMeeting = async (meeting) => {
+    if (!window.confirm('Are you sure you want to delete this meeting?')) return;
+    await supabase.from('meetings').delete().eq('id', meeting.id);
+    setSelectedMeeting(null);
+  };
+
   if (!session) {
     return <AuthForm onAuth={setSession} />;
   }
 
   if (showProfile) {
-    return !selectedMeeting ? (
-      <UserProfile user={session.user} onSelectMeeting={setSelectedMeeting} />
-    ) : (
-      <MeetingDetail meeting={selectedMeeting} onBack={() => setSelectedMeeting(null)} user={session.user} />
-    );
+    if (selectedNote) {
+      return <NoteDetail note={selectedNote} onBack={() => setSelectedNote(null)} />;
+    }
+    if (selectedMeeting) {
+      return <MeetingDetail meeting={selectedMeeting} onBack={() => setSelectedMeeting(null)} user={session.user} onDelete={handleDeleteMeeting} />;
+    }
+    return <UserProfile user={session.user} onSelectMeeting={setSelectedMeeting} onSelectNote={setSelectedNote} />;
   }
 
   return <MeetingMinutesGenerator onViewProfile={() => setShowProfile(true)} user={session.user} />;

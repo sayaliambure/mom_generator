@@ -4,6 +4,7 @@ import { ArrowDownTrayIcon, XMarkIcon,
   MicrophoneIcon, StopIcon, EyeIcon, EyeSlashIcon } from "@heroicons/react/24/solid";
 import { supabase } from '../supabaseClient';
 import { saveMeetingForUser } from '../utils/saveMeetingForUser';
+import { saveNoteForUser } from '../utils/saveNoteForUser';
 
 const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
   const [mode, setMode] = useState(""); // "upload" or "record"
@@ -832,6 +833,23 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Type your notes here..."
             />
+            <button
+              className="mt-4 bg-blue-600 text-white px-4 py-2 rounded w-full disabled:opacity-50"
+              disabled={!notes.trim() || !user}
+              onClick={async () => {
+                if (!user) { alert('You must be logged in to save notes.'); return; }
+                try {
+                  await saveNoteForUser(user, notes);
+                  alert('Notes saved!');
+                  setShowNotes(false);
+                  setNotes('');
+                } catch (err) {
+                  alert('Error saving notes: ' + (err.message || JSON.stringify(err)));
+                }
+              }}
+            >
+              Save Notes
+            </button>
           </div>
         )}
       </div>
