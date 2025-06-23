@@ -61,6 +61,12 @@ export default function UserProfile({ user, onSelectMeeting, onSelectNote }) {
                   ? note.content.slice(0, 40) + '...'
                   : note.content}
               </div>
+              {note.audio_file && (
+                <div className="text-xs text-blue-500 mt-1">Audio: {note.audio_file}</div>
+              )}
+              {typeof note.timestamp === 'number' && !isNaN(note.timestamp) && (
+                <div className="text-xs text-blue-500 mt-1">Timestamp: {note.timestamp.toFixed(1)}s</div>
+              )}
               {note.created_at && (
                 <div className="text-xs text-gray-400 mt-1">
                   {new Date(note.created_at).toLocaleString()}

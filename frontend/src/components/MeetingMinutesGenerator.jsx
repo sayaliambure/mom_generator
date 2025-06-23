@@ -51,6 +51,9 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
   const [scoring, setScoring] = useState(false);
   const [includeNotesInTranscript, setIncludeNotesInTranscript] = useState(false);
 
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [selectedNote, setSelectedNote] = useState(null);
+
   useEffect(() => {
     let interval;
     if (isLive) {
@@ -411,6 +414,16 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
     }
   }
 
+  // Helper to extract audio file name from URL
+  function audioFileNameFromUrl(url) {
+    if (!url) return null;
+    try {
+      return url.split('/').pop().split('?')[0];
+    } catch {
+      return null;
+    }
+  }
+
   return (
     <div className="relative min-h-screen bg-gray-100">
       <button
@@ -471,7 +484,10 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                           style={{ left: `${percent}%`, transform: 'translateX(-50%)', position: 'absolute', top: 0 }}
                           className="w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow hover:bg-blue-700 cursor-pointer pointer-events-auto"
                           title={`Note at ${note.timestamp.toFixed(1)}s`}
-                          onClick={() => alert(note.content)}
+                          onClick={() => {
+                            setSelectedNote(note);
+                            setShowNoteModal(true);
+                          }}
                         />
                       );
                     })}
@@ -568,7 +584,10 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                             style={{ left: `${percent}%`, transform: 'translateX(-50%)', position: 'absolute', top: 0 }}
                             className="w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow hover:bg-blue-700 cursor-pointer pointer-events-auto"
                             title={`Note at ${note.timestamp.toFixed(1)}s`}
-                            onClick={() => alert(note.content)}
+                            onClick={() => {
+                              setSelectedNote(note);
+                              setShowNoteModal(true);
+                            }}
                           />
                         );
                       })}
@@ -965,8 +984,18 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
               disabled={!noteInput.trim() || !user}
               onClick={async () => {
                 if (!user) { alert('You must be logged in to save notes.'); return; }
-                if (noteTimestamp !== null) {
+                const audio = document.querySelector('audio');
+                const isAudioActive = isRecording || (audio && !audio.paused);
+                if (isAudioActive && noteTimestamp !== null) {
                   setTimestampedNotes((prev) => [...prev, { content: noteInput, timestamp: noteTimestamp }]);
+                  // If audio is playing (not recording), also save to DB with audio file name and timestamp
+                  if (!isRecording && audio && (file?.name || audioFileNameFromUrl(audioURL))) {
+                    try {
+                      await saveNoteForUser(user, noteInput, file?.name || audioFileNameFromUrl(audioURL), noteTimestamp);
+                    } catch (err) {
+                      alert('Error saving note to DB: ' + (err.message || JSON.stringify(err)));
+                    }
+                  }
                   setShowNotes(false);
                   setNoteInput('');
                   setNoteTimestamp(null);
@@ -984,6 +1013,23 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
             >
               Save Notes
             </button>
+          </div>
+        )}
+
+        {/* Note modal for pointer click */}
+        {showNoteModal && selectedNote && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+            <div className="bg-white rounded-lg shadow-lg p-6 max-w-sm w-full relative">
+              <button
+                className="absolute top-2 right-2 text-gray-400 hover:text-gray-700 text-xl"
+                onClick={() => setShowNoteModal(false)}
+                aria-label="Close"
+              >
+                &times;
+              </button>
+              <div className="mb-2 text-xs text-gray-500">Timestamp: {selectedNote.timestamp.toFixed(1)}s</div>
+              <div className="text-lg whitespace-pre-line">{selectedNote.content}</div>
+            </div>
           </div>
         )}
       </div>

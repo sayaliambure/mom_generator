@@ -16,13 +16,18 @@ function NoteDetail({ note, onBack }) {
     <div className="p-6 max-w-2xl mx-auto relative">
       <button
         onClick={handleDelete}
-        // className="absolute top-4 right-4 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded shadow"
         className="absolute top-4 right-4 mb-4 text-red-500 underline"
       >
         Delete
       </button>
       <button onClick={onBack} className="mb-4 text-blue-600 underline">Back to notes</button>
       <h2 className="text-2xl font-bold mb-2">Note</h2>
+      {note.audio_file && (
+        <div className="mb-2 text-blue-500 text-sm">Audio: {note.audio_file}</div>
+      )}
+      {typeof note.timestamp === 'number' && !isNaN(note.timestamp) && (
+        <div className="mb-2 text-blue-500 text-sm">Timestamp: {note.timestamp.toFixed(1)}s</div>
+      )}
       <div className="mb-2 text-gray-600">
         {note.created_at && new Date(note.created_at).toLocaleString()}
       </div>
