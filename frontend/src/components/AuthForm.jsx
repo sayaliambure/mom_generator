@@ -39,35 +39,37 @@ export default function AuthForm({ onAuth }) {
   }, [user.id]);
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-sm mx-auto p-4 bg-white rounded shadow">
-      <h2 className="text-xl font-bold mb-4">{isSignUp ? 'Sign Up' : 'Login'}</h2>
-      <input
-        className="w-full border p-2 mb-2 rounded"
-        type="email"
-        placeholder="Email"
-        value={email}
-        onChange={e => setEmail(e.target.value)}
-        required
-      />
-      <input
-        className="w-full border p-2 mb-2 rounded"
-        type="password"
-        placeholder="Password"
-        value={password}
-        onChange={e => setPassword(e.target.value)}
-        required
-      />
-      {error && <div className="text-red-500 mb-2">{error}</div>}
-      <button className="w-full bg-blue-600 text-white p-2 rounded mb-2" type="submit">
-        {isSignUp ? 'Sign Up' : 'Login'}
-      </button>
-      <button
-        type="button"
-        className="w-full text-blue-600 underline"
-        onClick={() => setIsSignUp(!isSignUp)}
-      >
-        {isSignUp ? 'Already have an account? Login' : 'No account? Sign Up'}
-      </button>
-    </form>
+    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <form onSubmit={handleSubmit} className="max-w-sm w-full mx-auto p-4 bg-white rounded shadow">
+        <h2 className="text-xl font-bold mb-4">{isSignUp ? 'Sign Up' : 'Login'}</h2>
+        <input
+          className="w-full border p-2 mb-2 rounded"
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          required
+        />
+        <input
+          className="w-full border p-2 mb-2 rounded"
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          required
+        />
+        {error && <div className="text-red-500 mb-2">{error}</div>}
+        <button className="w-full bg-blue-600 text-white p-2 rounded mb-2" type="submit">
+          {isSignUp ? 'Sign Up' : 'Login'}
+        </button>
+        <button
+          type="button"
+          className="w-full text-blue-600 underline"
+          onClick={() => setIsSignUp(!isSignUp)}
+        >
+          {isSignUp ? 'Already have an account? Login' : 'No account? Sign Up'}
+        </button>
+      </form>
+    </div>
   );
 } 

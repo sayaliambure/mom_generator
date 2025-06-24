@@ -65,17 +65,22 @@ function App() {
     return <AuthForm onAuth={setSession} />;
   }
 
-  if (showProfile) {
-    if (selectedNote) {
-      return <NoteDetail note={selectedNote} onBack={() => setSelectedNote(null)} />;
-    }
-    if (selectedMeeting) {
-      return <MeetingDetail meeting={selectedMeeting} onBack={() => setSelectedMeeting(null)} user={session.user} onDelete={handleDeleteMeeting} />;
-    }
-    return <UserProfile user={session.user} onSelectMeeting={setSelectedMeeting} onSelectNote={setSelectedNote} />;
-  }
-
-  return <MeetingMinutesGenerator onViewProfile={() => setShowProfile(true)} user={session.user} />;
+  return (
+    <>
+      <div style={{ display: showProfile ? 'none' : 'block' }}>
+        <MeetingMinutesGenerator onViewProfile={() => setShowProfile(true)} user={session.user} />
+      </div>
+      <div style={{ display: showProfile ? 'block' : 'none' }}>
+        {selectedNote ? (
+          <NoteDetail note={selectedNote} onBack={() => setSelectedNote(null)} />
+        ) : selectedMeeting ? (
+          <MeetingDetail meeting={selectedMeeting} onBack={() => setSelectedMeeting(null)} user={session.user} onDelete={handleDeleteMeeting} />
+        ) : (
+          <UserProfile user={session.user} onSelectMeeting={setSelectedMeeting} onSelectNote={setSelectedNote} onBack={() => setShowProfile(false)} />
+        )}
+      </div>
+    </>
+  );
 }
 
 export default App;

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 
-export default function UserProfile({ user, onSelectMeeting, onSelectNote }) {
+export default function UserProfile({ user, onSelectMeeting, onSelectNote, onBack }) {
   const [meetings, setMeetings] = useState([]);
   const [notes, setNotes] = useState([]);
 
@@ -31,6 +31,14 @@ export default function UserProfile({ user, onSelectMeeting, onSelectNote }) {
 
   return (
     <div className="p-6">
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="mb-6 text-blue-600 underline"
+        >
+          Go Back
+        </button>
+      )}
       <h2 className="text-2xl font-bold mb-4">Your Meetings</h2>
       <ul>
         {meetings.map(meeting => (

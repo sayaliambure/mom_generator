@@ -5,6 +5,7 @@ import { ArrowDownTrayIcon, XMarkIcon,
 import { supabase } from '../supabaseClient';
 import { saveMeetingForUser } from '../utils/saveMeetingForUser';
 import { saveNoteForUser } from '../utils/saveNoteForUser';
+import jsPDF from 'jspdf';
 
 const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
   const [mode, setMode] = useState(""); // "upload" or "record"
@@ -53,6 +54,8 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
 
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [selectedNote, setSelectedNote] = useState(null);
+
+  const recordingStartTimeRef = useRef(null);
 
   useEffect(() => {
     let interval;
@@ -182,9 +185,21 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
       streamRef.current = stream;
       mediaRecorder.start();
       setIsRecording(true);
+      recordingStartTimeRef.current = Date.now();
     } catch (err) {
       alert('Error starting recording: ' + err.message);
     }
+  };
+
+  const fetchNotesForCurrentAudio = async (user, audioFileName) => {
+    if (!user || !audioFileName) return [];
+    const { data, error } = await supabase
+      .from('notes')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('audio_file', audioFileName)
+      .order('timestamp', { ascending: true });
+    return data || [];
   };
 
   const stopRecording = async () => {
@@ -196,12 +211,28 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
           mediaRecorder.stop();
         });
         setIsRecording(false);
+        recordingStartTimeRef.current = null;
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        setFile(new File([audioBlob], `recording_${Date.now()}.webm`, { type: 'audio/webm' }));
+        const newFile = new File([audioBlob], `recording_${Date.now()}.webm`, { type: 'audio/webm' });
+        setFile(newFile);
         setAudioURL(URL.createObjectURL(audioBlob));
         // Clean up stream
         if (streamRef.current) {
           streamRef.current.getTracks().forEach(track => track.stop());
+        }
+        // Fetch notes for this audio file and merge with local notes
+        if (user && newFile.name) {
+          const dbNotes = await fetchNotesForCurrentAudio(user, newFile.name);
+          setTimestampedNotes((prev) => {
+            // Merge local notes not in DB (by timestamp+content) with DB notes
+            const merged = [...dbNotes];
+            prev.forEach(localNote => {
+              if (!merged.some(dbNote => dbNote.timestamp === localNote.timestamp && dbNote.content === localNote.content)) {
+                merged.push(localNote);
+              }
+            });
+            return merged;
+          });
         }
       }
     } catch (err) {
@@ -357,13 +388,22 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
 
   const DownloadButton = ({ content, filename }) => {
     const handleDownload = () => {
-      const element = document.createElement("a");
-      const file = new Blob([content], { type: "text/plain" });
-      element.href = URL.createObjectURL(file);
-      element.download = filename;
-      document.body.appendChild(element); // required for Firefox
-      element.click();
-      document.body.removeChild(element);
+      if (filename.endsWith('.pdf')) {
+        const doc = new jsPDF();
+        doc.setFontSize(10);
+        // Split content into lines to avoid text overflow
+        const lines = doc.splitTextToSize(content, 180);
+        doc.text(lines, 10, 10);
+        doc.save(filename);
+      } else {
+        const element = document.createElement("a");
+        const file = new Blob([content], { type: "text/plain" });
+        element.href = URL.createObjectURL(file);
+        element.download = filename;
+        document.body.appendChild(element); // required for Firefox
+        element.click();
+        document.body.removeChild(element);
+      }
     };
   
     return (
@@ -394,13 +434,14 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
 
   // Helper to insert notes into transcript
   function insertNotesIntoTranscript(transcript, notes) {
-    // If transcript is segmented by time, insert at the right place
-    // Otherwise, append at the end
     let result = transcript;
-    // Simple: append at the end
     result += '\n\n';
     notes.forEach(note => {
-      result += `[note taken by user at ${note.timestamp.toFixed(1)}s: ${note.content}]\n`;
+      if (typeof note.timestamp === 'number' && !isNaN(note.timestamp)) {
+        result += `[note taken by user at ${note.timestamp.toFixed(1)}s: ${note.content}]\n`;
+      } else {
+        result += `[note taken by user: ${note.content}]\n`;
+      }
     });
     return result;
   }
@@ -477,7 +518,10 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                     {timestampedNotes.map((note, idx) => {
                       const audio = document.querySelector('audio');
                       const duration = audio ? audio.duration : 1;
-                      const percent = duration ? (note.timestamp / duration) * 100 : 0;
+                      const percent = (typeof note.timestamp === 'number' && !isNaN(note.timestamp) && duration)
+                        ? (note.timestamp / duration) * 100 : 0;
+                      // Only render pointer if timestamp is a valid number
+                      if (typeof note.timestamp !== 'number' || isNaN(note.timestamp)) return null;
                       return (
                         <button
                           key={idx}
@@ -577,7 +621,10 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                       {timestampedNotes.map((note, idx) => {
                         const audio = document.querySelector('audio');
                         const duration = audio ? audio.duration : 1;
-                        const percent = duration ? (note.timestamp / duration) * 100 : 0;
+                        const percent = (typeof note.timestamp === 'number' && !isNaN(note.timestamp) && duration)
+                          ? (note.timestamp / duration) * 100 : 0;
+                        // Only render pointer if timestamp is a valid number
+                        if (typeof note.timestamp !== 'number' || isNaN(note.timestamp)) return null;
                         return (
                           <button
                             key={idx}
@@ -786,7 +833,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
             <div className="flex justify-between items-center mb-2">
               <h2 className="text-xl font-semibold">Meeting Transcript</h2>
               <div className="mt-2">
-                <DownloadButton content={transcript} filename="transcript.txt" />
+                <DownloadButton content={transcript} filename="transcript.pdf" />
               </div>
             </div>
             <textarea
@@ -845,7 +892,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
             <div className="flex justify-between items-center mb-2">
               <h2 className="text-xl font-semibold">Summary</h2>
               <div className="mt-2">
-                <DownloadButton content={summary} filename="summary.txt" />
+                <DownloadButton content={summary} filename="summary.pdf" />
               </div>
             </div>
             <textarea
@@ -862,7 +909,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
             <div className="flex justify-between items-center mb-2">
               <h2 className="text-xl font-semibold">Action Items</h2>
               <div className="mt-2">
-                <DownloadButton content={actionItems} filename="action_items.txt" />
+                <DownloadButton content={actionItems} filename="action_items.pdf" />
               </div>
             </div>
             <textarea
@@ -879,7 +926,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
             <div className="flex justify-between items-center mb-2">
               <h2 className="text-xl font-semibold">Meeting Minutes</h2>
               <div className="mt-2">
-                <DownloadButton content={editableMeetingMinutes} filename="meeting_minutes.txt" />
+                <DownloadButton content={editableMeetingMinutes} filename="meeting_minutes.pdf" />
               </div>
             </div>
             <textarea
@@ -945,9 +992,13 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
         <button
           onClick={() => {
             let ts = null;
-            const audio = document.querySelector('audio');
-            if ((isRecording || (audio && !audio.paused))) {
-              ts = audio ? audio.currentTime : null;
+            if (isRecording && recordingStartTimeRef.current) {
+              ts = (Date.now() - recordingStartTimeRef.current) / 1000;
+            } else {
+              const audio = document.querySelector('audio');
+              if (audio && !audio.paused) {
+                ts = audio.currentTime;
+              }
             }
             setNoteTimestamp(ts);
             setNoteInput('');
@@ -980,36 +1031,31 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
               placeholder="Type your notes here..."
             />
             <button
-              className="mt-4 bg-blue-600 text-white px-4 py-2 rounded w-full disabled:opacity-50"
-              disabled={!noteInput.trim() || !user}
               onClick={async () => {
                 if (!user) { alert('You must be logged in to save notes.'); return; }
-                const audio = document.querySelector('audio');
-                const isAudioActive = isRecording || (audio && !audio.paused);
-                if (isAudioActive && noteTimestamp !== null) {
-                  setTimestampedNotes((prev) => [...prev, { content: noteInput, timestamp: noteTimestamp }]);
-                  // If audio is playing (not recording), also save to DB with audio file name and timestamp
-                  if (!isRecording && audio && (file?.name || audioFileNameFromUrl(audioURL))) {
-                    try {
-                      await saveNoteForUser(user, noteInput, file?.name || audioFileNameFromUrl(audioURL), noteTimestamp);
-                    } catch (err) {
-                      alert('Error saving note to DB: ' + (err.message || JSON.stringify(err)));
-                    }
+                let ts = noteTimestamp;
+                let audioFileName = null;
+                if (isRecording && file) {
+                  audioFileName = file.name;
+                } else {
+                  const audio = document.querySelector('audio');
+                  if (audio && !audio.paused) {
+                    audioFileName = file?.name || audioFileNameFromUrl(audioURL);
                   }
+                }
+                setTimestampedNotes((prev) => [...prev, { content: noteInput, timestamp: ts }]);
+                try {
+                  await saveNoteForUser(user, noteInput, audioFileName, ts);
+                  alert('Notes saved!');
                   setShowNotes(false);
                   setNoteInput('');
                   setNoteTimestamp(null);
-                } else {
-                  try {
-                    await saveNoteForUser(user, noteInput);
-                    alert('Notes saved!');
-                    setShowNotes(false);
-                    setNoteInput('');
-                  } catch (err) {
-                    alert('Error saving notes: ' + (err.message || JSON.stringify(err)));
-                  }
+                } catch (err) {
+                  alert('Error saving notes: ' + (err.message || JSON.stringify(err)));
                 }
               }}
+              className="mt-4 bg-blue-600 text-white px-4 py-2 rounded w-full disabled:opacity-50"
+              disabled={!noteInput.trim() || !user}
             >
               Save Notes
             </button>
@@ -1027,7 +1073,9 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
               >
                 &times;
               </button>
-              <div className="mb-2 text-xs text-gray-500">Timestamp: {selectedNote.timestamp.toFixed(1)}s</div>
+              {typeof selectedNote.timestamp === 'number' && !isNaN(selectedNote.timestamp) && (
+                <div className="mb-2 text-xs text-gray-500">Timestamp: {selectedNote.timestamp.toFixed(1)}s</div>
+              )}
               <div className="text-lg whitespace-pre-line">{selectedNote.content}</div>
             </div>
           </div>
