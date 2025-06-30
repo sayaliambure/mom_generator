@@ -57,6 +57,9 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
 
   const recordingStartTimeRef = useRef(null);
 
+  // Add a ref to queue notes taken during recording
+  const queuedNotesRef = useRef([]);
+
   useEffect(() => {
     let interval;
     if (isLive) {
@@ -233,6 +236,17 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
             });
             return merged;
           });
+        }
+        // Save all queued notes to DB with the new audio file name
+        if (user && newFile.name && queuedNotesRef.current.length > 0) {
+          for (const note of queuedNotesRef.current) {
+            try {
+              await saveNoteForUser(user, note.content, newFile.name, note.timestamp);
+            } catch (err) {
+              // Optionally handle error
+            }
+          }
+          queuedNotesRef.current = [];
         }
       }
     } catch (err) {
@@ -438,9 +452,9 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
     result += '\n\n';
     notes.forEach(note => {
       if (typeof note.timestamp === 'number' && !isNaN(note.timestamp)) {
-        result += `[note taken by user at ${note.timestamp.toFixed(1)}s: ${note.content}]\n`;
+        result += `[note taken by user at ${note.timestamp.toFixed(1)}s]: ${note.content}\n`;
       } else {
-        result += `[note taken by user: ${note.content}]\n`;
+        result += `[note taken by user]: ${note.content}\n`;
       }
     });
     return result;
@@ -1044,6 +1058,15 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                   }
                 }
                 setTimestampedNotes((prev) => [...prev, { content: noteInput, timestamp: ts }]);
+                if (isRecording) {
+                  // Queue the note for saving after recording stops
+                  queuedNotesRef.current.push({ content: noteInput, timestamp: ts });
+                  setShowNotes(false);
+                  setNoteInput('');
+                  setNoteTimestamp(null);
+                  return;
+                }
+                // If not recording, save immediately
                 try {
                   await saveNoteForUser(user, noteInput, audioFileName, ts);
                   alert('Notes saved!');
