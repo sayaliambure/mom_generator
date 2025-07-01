@@ -127,6 +127,9 @@ def speaker_rec_and_transcribe(filepath):
     diarization = diarization_pipeline(filepath)
     print("Diarization complete")
 
+    # RELOAD EMBEDDINGS HERE
+    known_embeddings = load_known_embeddings()  # <--- Now reloads every time
+
     # Step 2: Load audio for segmentation
     audio = AudioSegment.from_file(filepath)
     
@@ -144,7 +147,7 @@ def speaker_rec_and_transcribe(filepath):
         except Exception as e:
             text = f"Error: {e}"
 
-    # Speaker recognition: match embedding
+        # Speaker recognition: match embedding
         wav = preprocess_wav(temp_audio_path)
         segment_embedding = encoder.embed_utterance(wav)
 

@@ -38,7 +38,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
   const [editableActionItems, setEditableActionItems] = useState("");
   const [editableMeetingMinutes, setEditableMeetingMinutes] = useState("");
   const [identifySpeakers, setIdentifySpeakers] = useState(false);
-  const [attendees, setAttendees] = useState([{ name: "", sample: null }]);
+  const [attendees, setAttendees] = useState([{ name: "", sample: null, sampleType: "upload" }]);
   const [audioURL, setAudioURL] = useState(null);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -663,6 +663,73 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
     // eslint-disable-next-line
   }, [scoringResult]);
 
+  // Helper to convert audio blob to WAV format
+  async function convertToWav(audioBlob) {
+    return new Promise((resolve) => {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const fileReader = new FileReader();
+      
+      fileReader.onload = async (e) => {
+        try {
+          const arrayBuffer = e.target.result;
+          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+          
+          // Create WAV file
+          const wavBlob = audioBufferToWav(audioBuffer);
+          resolve(wavBlob);
+        } catch (error) {
+          console.error('Error converting to WAV:', error);
+          // Fallback: return original blob if conversion fails
+          resolve(audioBlob);
+        }
+      };
+      
+      fileReader.readAsArrayBuffer(audioBlob);
+    });
+  }
+
+  // Helper to convert AudioBuffer to WAV blob
+  function audioBufferToWav(buffer) {
+    const length = buffer.length;
+    const numberOfChannels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const arrayBuffer = new ArrayBuffer(44 + length * numberOfChannels * 2);
+    const view = new DataView(arrayBuffer);
+    
+    // WAV header
+    const writeString = (offset, string) => {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    };
+    
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + length * numberOfChannels * 2, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, numberOfChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * numberOfChannels * 2, true);
+    view.setUint16(32, numberOfChannels * 2, true);
+    view.setUint16(34, 16, true);
+    writeString(36, 'data');
+    view.setUint32(40, length * numberOfChannels * 2, true);
+    
+    // Write audio data
+    let offset = 44;
+    for (let i = 0; i < length; i++) {
+      for (let channel = 0; channel < numberOfChannels; channel++) {
+        const sample = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[i]));
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+        offset += 2;
+      }
+    }
+    
+    return new Blob([arrayBuffer], { type: 'audio/wav' });
+  }
+
   return (
     <div className="relative min-h-screen bg-gray-100">
       <button
@@ -737,6 +804,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                 )}
               </div>
             )}
+            {/* Identify Speakers UI below upload controls */}
             <div className="mb-4">
               <label className="inline-flex items-center space-x-2">
                 <input
@@ -748,7 +816,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
               </label>
             </div>
             {identifySpeakers && (
-              <div className="space-y-4">
+              <div className="space-y-4 mb-6">
                 {attendees.map((attendee, index) => (
                   <div key={index} className="border p-4 rounded-md shadow-sm">
                     <label className="block mb-1 font-medium text-sm">Attendee {index + 1}</label>
@@ -763,22 +831,124 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                       }}
                       className="w-full border rounded p-2 mb-2"
                     />
-                    <input
-                      type="file"
-                      accept="audio/*"
-                      onChange={(e) => {
-                        const updated = [...attendees];
-                        updated[index].sample = e.target.files[0];
-                        setAttendees(updated);
-                      }}
-                      className="w-full"
-                    />
+                    {/* Sample Type Selection */}
+                    <div className="mb-2">
+                      <label className="block text-sm font-medium mb-1">Sample Type:</label>
+                      <div className="flex gap-4">
+                        <label className="flex items-center">
+                          <input
+                            type="radio"
+                            name={`sampleType-${index}`}
+                            value="upload"
+                            checked={attendee.sampleType === "upload"}
+                            onChange={(e) => {
+                              const updated = [...attendees];
+                              updated[index].sampleType = e.target.value;
+                              updated[index].sample = null;
+                              setAttendees(updated);
+                            }}
+                            className="mr-2"
+                          />
+                          Upload Audio File
+                        </label>
+                        <label className="flex items-center">
+                          <input
+                            type="radio"
+                            name={`sampleType-${index}`}
+                            value="record"
+                            checked={attendee.sampleType === "record"}
+                            onChange={(e) => {
+                              const updated = [...attendees];
+                              updated[index].sampleType = e.target.value;
+                              updated[index].sample = null;
+                              setAttendees(updated);
+                            }}
+                            className="mr-2"
+                          />
+                          Record Audio
+                        </label>
+                      </div>
+                    </div>
+                    {/* Upload Option */}
+                    {attendee.sampleType === "upload" && (
+                      <input
+                        type="file"
+                        accept="audio/*"
+                        onChange={(e) => {
+                          const updated = [...attendees];
+                          updated[index].sample = e.target.files[0];
+                          setAttendees(updated);
+                        }}
+                        className="w-full"
+                      />
+                    )}
+                    {/* Record Option */}
+                    {attendee.sampleType === "record" && (
+                      <div className="space-y-2">
+                        <button
+                          onClick={async () => {
+                            try {
+                              const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                              const mediaRecorder = new MediaRecorder(stream);
+                              const audioChunks = [];
+                              mediaRecorder.ondataavailable = (event) => {
+                                if (event.data.size > 0) {
+                                  audioChunks.push(event.data);
+                                }
+                              };
+                              mediaRecorder.onstop = async () => {
+                                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                                // Convert to WAV format
+                                const wavBlob = await convertToWav(audioBlob);
+                                // Create file with attendee name
+                                const fileName = `${attendee.name || `attendee_${index + 1}`}.wav`;
+                                const audioFile = new File([wavBlob], fileName, { type: 'audio/wav' });
+                                const updated = [...attendees];
+                                updated[index].sample = audioFile;
+                                setAttendees(updated);
+                                // Clean up stream
+                                stream.getTracks().forEach(track => track.stop());
+                              };
+                              mediaRecorder.start();
+                              // Update button state
+                              const updated = [...attendees];
+                              updated[index].isRecording = true;
+                              setAttendees(updated);
+                              // Stop recording after 5 seconds (or you can add a stop button)
+                              setTimeout(() => {
+                                if (mediaRecorder.state === 'recording') {
+                                  mediaRecorder.stop();
+                                  const updated = [...attendees];
+                                  updated[index].isRecording = false;
+                                  setAttendees(updated);
+                                }
+                              }, 5000);
+                            } catch (err) {
+                              alert('Error starting recording: ' + err.message);
+                            }
+                          }}
+                          disabled={attendee.isRecording}
+                          className={`px-4 py-2 rounded text-white ${
+                            attendee.isRecording 
+                              ? 'bg-gray-400' 
+                              : 'bg-blue-600 hover:bg-blue-700'
+                          }`}
+                        >
+                          {attendee.isRecording ? 'Recording...' : 'Start Recording (5s)'}
+                        </button>
+                        {attendee.sample && (
+                          <div className="text-sm text-green-600">
+                            ✓ Audio recorded: {attendee.sample.name}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
                 <button
                   onClick={(e) => {
                     e.preventDefault();
-                    setAttendees([...attendees, { name: "", sample: null }]);
+                    setAttendees([...attendees, { name: "", sample: null, sampleType: "upload" }]);
                   }}
                   className="text-sm text-blue-600 mt-2 underline"
                 >
@@ -791,6 +961,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
 
         {mode === "record" && (
           <>
+            {/* Main meeting recording controls */}
             <div className="flex flex-col items-center mb-6 space-y-4 w-full">
               {!isRecording ? (
                 <button
@@ -821,7 +992,6 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                         const duration = audio ? audio.duration : 1;
                         const percent = (typeof note.timestamp === 'number' && !isNaN(note.timestamp) && duration)
                           ? (note.timestamp / duration) * 100 : 0;
-                        // Only render pointer if timestamp is a valid number
                         if (typeof note.timestamp !== 'number' || isNaN(note.timestamp)) return null;
                         return (
                           <button
@@ -841,6 +1011,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                 </div>
               )}
             </div>
+            {/* Identify Speakers UI below recording controls */}
             <div className="mb-4">
               <label className="inline-flex items-center space-x-2">
                 <input
@@ -852,7 +1023,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
               </label>
             </div>
             {identifySpeakers && (
-              <div className="space-y-4 w-full">
+              <div className="space-y-4 mb-6">
                 {attendees.map((attendee, index) => (
                   <div key={index} className="border p-4 rounded-md shadow-sm">
                     <label className="block mb-1 font-medium text-sm">Attendee {index + 1}</label>
@@ -867,22 +1038,124 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                       }}
                       className="w-full border rounded p-2 mb-2"
                     />
-                    <input
-                      type="file"
-                      accept="audio/*"
-                      onChange={(e) => {
-                        const updated = [...attendees];
-                        updated[index].sample = e.target.files[0];
-                        setAttendees(updated);
-                      }}
-                      className="w-full"
-                    />
+                    {/* Sample Type Selection */}
+                    <div className="mb-2">
+                      <label className="block text-sm font-medium mb-1">Sample Type:</label>
+                      <div className="flex gap-4">
+                        <label className="flex items-center">
+                          <input
+                            type="radio"
+                            name={`sampleType-${index}`}
+                            value="upload"
+                            checked={attendee.sampleType === "upload"}
+                            onChange={(e) => {
+                              const updated = [...attendees];
+                              updated[index].sampleType = e.target.value;
+                              updated[index].sample = null;
+                              setAttendees(updated);
+                            }}
+                            className="mr-2"
+                          />
+                          Upload Audio File
+                        </label>
+                        <label className="flex items-center">
+                          <input
+                            type="radio"
+                            name={`sampleType-${index}`}
+                            value="record"
+                            checked={attendee.sampleType === "record"}
+                            onChange={(e) => {
+                              const updated = [...attendees];
+                              updated[index].sampleType = e.target.value;
+                              updated[index].sample = null;
+                              setAttendees(updated);
+                            }}
+                            className="mr-2"
+                          />
+                          Record Audio
+                        </label>
+                      </div>
+                    </div>
+                    {/* Upload Option */}
+                    {attendee.sampleType === "upload" && (
+                      <input
+                        type="file"
+                        accept="audio/*"
+                        onChange={(e) => {
+                          const updated = [...attendees];
+                          updated[index].sample = e.target.files[0];
+                          setAttendees(updated);
+                        }}
+                        className="w-full"
+                      />
+                    )}
+                    {/* Record Option */}
+                    {attendee.sampleType === "record" && (
+                      <div className="space-y-2">
+                        <button
+                          onClick={async () => {
+                            try {
+                              const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                              const mediaRecorder = new MediaRecorder(stream);
+                              const audioChunks = [];
+                              mediaRecorder.ondataavailable = (event) => {
+                                if (event.data.size > 0) {
+                                  audioChunks.push(event.data);
+                                }
+                              };
+                              mediaRecorder.onstop = async () => {
+                                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                                // Convert to WAV format
+                                const wavBlob = await convertToWav(audioBlob);
+                                // Create file with attendee name
+                                const fileName = `${attendee.name || `attendee_${index + 1}`}.wav`;
+                                const audioFile = new File([wavBlob], fileName, { type: 'audio/wav' });
+                                const updated = [...attendees];
+                                updated[index].sample = audioFile;
+                                setAttendees(updated);
+                                // Clean up stream
+                                stream.getTracks().forEach(track => track.stop());
+                              };
+                              mediaRecorder.start();
+                              // Update button state
+                              const updated = [...attendees];
+                              updated[index].isRecording = true;
+                              setAttendees(updated);
+                              // Stop recording after 5 seconds (or you can add a stop button)
+                              setTimeout(() => {
+                                if (mediaRecorder.state === 'recording') {
+                                  mediaRecorder.stop();
+                                  const updated = [...attendees];
+                                  updated[index].isRecording = false;
+                                  setAttendees(updated);
+                                }
+                              }, 5000);
+                            } catch (err) {
+                              alert('Error starting recording: ' + err.message);
+                            }
+                          }}
+                          disabled={attendee.isRecording}
+                          className={`px-4 py-2 rounded text-white ${
+                            attendee.isRecording 
+                              ? 'bg-gray-400' 
+                              : 'bg-blue-600 hover:bg-blue-700'
+                          }`}
+                        >
+                          {attendee.isRecording ? 'Recording...' : 'Start Recording (5s)'}
+                        </button>
+                        {attendee.sample && (
+                          <div className="text-sm text-green-600">
+                            ✓ Audio recorded: {attendee.sample.name}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
                 <button
                   onClick={(e) => {
                     e.preventDefault();
-                    setAttendees([...attendees, { name: "", sample: null }]);
+                    setAttendees([...attendees, { name: "", sample: null, sampleType: "upload" }]);
                   }}
                   className="text-sm text-blue-600 mt-2 underline"
                 >

@@ -45,6 +45,9 @@ export async function saveMeetingForUser(user, meetingData, audioFile) {
     return { id: data[0].id };
   } else {
     // Insert new meeting
+    if (!updateObj.id) {
+      delete updateObj.id;
+    }
     const { data, error } = await supabase
       .from('meetings')
       .insert([updateObj])
