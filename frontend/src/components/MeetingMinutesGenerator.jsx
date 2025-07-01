@@ -6,6 +6,7 @@ import { supabase } from '../supabaseClient';
 import { saveMeetingForUser } from '../utils/saveMeetingForUser';
 import { saveNoteForUser } from '../utils/saveNoteForUser';
 import jsPDF from 'jspdf';
+import { uploadAudioFile } from '../utils/uploadAudioToSupabase';
 
 const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
   const [mode, setMode] = useState(""); // "upload" or "record"
@@ -59,6 +60,10 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
 
   // Add a ref to queue notes taken during recording
   const queuedNotesRef = useRef([]);
+
+  const [meetingId, setMeetingId] = useState(null);
+
+  const [meetingNotes, setMeetingNotes] = useState([]);
 
   useEffect(() => {
     let interval;
@@ -165,11 +170,26 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
     }
   };
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const selectedFile = e.target.files[0];
     setFile(selectedFile);
     setAudioURL(URL.createObjectURL(selectedFile));  // Create temporary URL
     setMode("upload");
+    // Save meeting as soon as audio is uploaded
+    if (selectedFile && user) {
+      const meetingData = {
+        title: meetingTitle,
+        date: meetingDate || null,
+        attendees: meet_attendees,
+        agenda: meetingAgenda,
+      };
+      try {
+        const { id } = await saveMeetingForUser(user, meetingData, selectedFile);
+        setMeetingId(id);
+      } catch (error) {
+        alert(error.message || JSON.stringify(error));
+      }
+    }
   };
 
   const startRecording = async () => {
@@ -223,6 +243,27 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
         if (streamRef.current) {
           streamRef.current.getTracks().forEach(track => track.stop());
         }
+        
+        let newMeetingId = null;
+        
+        // Save meeting first
+        if (user && newFile) {
+          const meetingData = {
+            title: meetingTitle,
+            date: meetingDate || null,
+            attendees: meet_attendees,
+            agenda: meetingAgenda,
+          };
+          try {
+            const { id } = await saveMeetingForUser(user, meetingData, newFile);
+            newMeetingId = id;
+            setMeetingId(id);
+          } catch (error) {
+            alert(error.message || JSON.stringify(error));
+            return; // Don't proceed if meeting save fails
+          }
+        }
+        
         // Fetch notes for this audio file and merge with local notes
         if (user && newFile.name) {
           const dbNotes = await fetchNotesForCurrentAudio(user, newFile.name);
@@ -237,20 +278,21 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
             return merged;
           });
         }
-        // Save all queued notes to DB with the new audio file name
-        if (user && newFile.name && queuedNotesRef.current.length > 0) {
+        
+        // Save all queued notes to DB with the new meeting ID
+        if (user && newFile.name && queuedNotesRef.current.length > 0 && newMeetingId) {
           for (const note of queuedNotesRef.current) {
             try {
-              await saveNoteForUser(user, note.content, newFile.name, note.timestamp);
+              await saveNoteForUser(user, note.content, newFile.name, note.timestamp, newMeetingId);
             } catch (err) {
-              // Optionally handle error
+              console.error('Error saving queued note:', err);
             }
           }
           queuedNotesRef.current = [];
         }
       }
     } catch (err) {
-      alert('Error stopping recording: ' + err.message);
+      alert('Error stopping recording: ' + (err.message || JSON.stringify(err)));
     }
   };
 
@@ -286,6 +328,28 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
       const data = await res.json();
       if (res.ok) {
         setTranscript(data.transcript);
+        try {
+          // If no meetingId exists, create a basic meeting first
+          if (!meetingId) {
+            console.log('No meetingId found, creating new meeting first...');
+            const basicMeetingData = {
+              title: meetingTitle || 'Untitled Meeting',
+              date: meetingDate || null,
+              attendees: meet_attendees || '',
+              agenda: meetingAgenda || '',
+              audio_url: file ? await uploadAudioFile(user.id, file) : null,
+            };
+            const { id } = await saveMeetingForUser(user, basicMeetingData, null);
+            setMeetingId(id);
+            console.log('Created new meeting with ID:', id);
+          }
+          
+          await upsertMeetingField('transcript', data.transcript);
+          console.log('Transcript saved to database successfully');
+        } catch (saveError) {
+          console.error('Failed to save transcript to database:', saveError);
+          alert(`Transcript generated but failed to save to database: ${saveError.message || JSON.stringify(saveError)}`);
+        }
       } else {
         alert(data.error || "Transcription failed");
       }
@@ -303,6 +367,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
         transcript: transcript || transcriptText,
       });
       setSummary(res.data.summary);
+      await upsertMeetingField('summary', res.data.summary);
     } catch (err) {
       alert("Error generating summary");
     } finally {
@@ -317,6 +382,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
         transcript: transcript || transcriptText,
       });
       setActionItems(res.data.action_items);
+      await upsertMeetingField('action_items', res.data.action_items);
     } catch (err) {
       alert("Error generating action items");
     } finally {
@@ -350,7 +416,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
     try {
       const res = await axios.post("http://127.00.0.1:5000/minutes-of-meeting", payload);
       setMeetingMinutes(res.data.minutes_of_meeting || "Minutes generated successfully!"); 
-      // alert("Meeting minutes sent to API successfully!");
+      await upsertMeetingField('minutes', res.data.minutes_of_meeting || "Minutes generated successfully!");
     } catch (err) {
       console.error("Error sending meeting minutes to API:", err);
       alert("Error generating meeting minutes. Please try again.");
@@ -370,6 +436,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
     try {
       const res = await axios.post("http://127.0.0.1:5000/sentiment", { transcript: fullTranscript });
       setSentimentResult(res.data.sentiment || res.data.result || JSON.stringify(res.data));
+      await upsertMeetingField('sentiment', res.data.sentiment || res.data.result || JSON.stringify(res.data));
     } catch (err) {
       setSentimentResult("Error analyzing sentiment.");
       console.error(err);
@@ -392,6 +459,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
     try {
       const res = await axios.post("http://127.0.0.1:5000/scoring-mechanism", { agenda: meetingAgenda, transcript: fullTranscript });
       setScoringResult(res.data.score || res.data.result || JSON.stringify(res.data));
+      await upsertMeetingField('score', res.data.score || res.data.result || JSON.stringify(res.data));
     } catch (err) {
       setScoringResult("Error scoring meeting.");
       console.error(err);
@@ -478,6 +546,122 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
       return null;
     }
   }
+
+  // Fetch notes for the current meeting when meetingId changes
+  useEffect(() => {
+    async function fetchNotesForMeeting() {
+      if (!meetingId) return;
+      const { data, error } = await supabase
+        .from('notes')
+        .select('*')
+        .eq('meeting_id', meetingId)
+        .order('timestamp', { ascending: true });
+      if (!error) setMeetingNotes(data || []);
+    }
+    fetchNotesForMeeting();
+  }, [meetingId]);
+
+  // Add debug function to check user's meetings
+  async function debugUserMeetings() {
+    try {
+      const { data: allMeetings, error } = await supabase
+        .from('meetings')
+        .select('*')
+        .eq('user_id', user?.id);
+      
+      if (error) {
+        return;
+      }
+      
+      if (meetingId) {
+        const targetMeeting = allMeetings?.find(m => m.id === meetingId);
+      }
+    } catch (err) {
+      // Silent error
+    }
+  }
+
+  // Add verification function to check if meeting was actually saved
+  async function verifyMeetingSaved(meetingId) {
+    try {
+      const { data, error } = await supabase
+        .from('meetings')
+        .select('*')
+        .eq('id', meetingId);
+      
+      if (error) {
+        return false;
+      }
+      
+      if (!data || data.length === 0) {
+        return false;
+      }
+      
+      if (data.length > 1) {
+        // Multiple meetings found - this is a warning but not an error
+      }
+      
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  // Helper to save or update meeting with only the changed field
+  async function upsertMeetingField(field, value, extra = {}) {
+    if (!user) return;
+    try {
+      // Debug: check user's meetings first
+      await debugUserMeetings();
+      
+      const meetingData = { id: meetingId, ...extra };
+      meetingData[field] = value;
+      // Always include latest form values if present
+      if (meetingTitle) meetingData.title = meetingTitle;
+      if (meetingDate) meetingData.date = meetingDate || null;
+      if (meet_attendees) meetingData.attendees = meet_attendees;
+      if (meetingAgenda) meetingData.agenda = meetingAgenda;
+      
+      const { id } = await saveMeetingForUser(user, meetingData, null);
+      if (!meetingId) {
+        setMeetingId(id);
+      }
+      
+      // Verify the meeting was actually saved
+      const verified = await verifyMeetingSaved(id);
+      if (!verified) {
+        throw new Error(`Failed to verify ${field} was saved to database`);
+      }
+    } catch (error) {
+      alert(`Error saving ${field} to database: ${error.message || JSON.stringify(error)}`);
+    }
+  }
+
+  // Add useEffect hooks to upsert meeting fields when they change
+  useEffect(() => {
+    if (transcript) upsertMeetingField('transcript', transcript);
+    // eslint-disable-next-line
+  }, [transcript]);
+
+  useEffect(() => {
+    if (summary) upsertMeetingField('summary', summary);
+    // eslint-disable-next-line
+  }, [summary]);
+
+  useEffect(() => {
+    if (meetingMinutes) upsertMeetingField('minutes', meetingMinutes);
+    // eslint-disable-next-line
+  }, [meetingMinutes]);
+
+  useEffect(() => {
+    if (sentimentResult) upsertMeetingField('sentiment', sentimentResult);
+    // eslint-disable-next-line
+  }, [sentimentResult]);
+
+  useEffect(() => {
+    if (scoringResult) upsertMeetingField('score', scoringResult);
+    // eslint-disable-next-line
+  }, [scoringResult]);
 
   return (
     <div className="relative min-h-screen bg-gray-100">
@@ -780,6 +964,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                 }
                 if (res.ok) {
                   setTranscript(transcriptResult);
+                  await upsertMeetingField('transcript', transcriptResult);
                 } else {
                   alert(data.error || "Transcription failed");
                 }
@@ -826,6 +1011,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                 }
                 if (res.ok) {
                   setTranscript(transcriptResult);
+                  await upsertMeetingField('transcript', transcriptResult);
                 } else {
                   alert(data.error || "Transcription failed");
                 }
@@ -975,34 +1161,6 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
           </div>
         )}
 
-        {user && (transcript || summary || actionItems || meetingMinutes) && (
-          <button
-            className="mt-4 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-            onClick={async () => {
-              try {
-                console.log('Saving meeting for user:', user?.id);
-                await saveMeetingForUser(user, {
-                  title: meetingTitle,
-                  date: meetingDate || null,
-                  attendees: meet_attendees,
-                  agenda: meetingAgenda,
-                  transcript: editableTranscript || transcript || transcriptText,
-                  summary,
-                  action_items: actionItems,
-                  minutes: meetingMinutes,
-                  sentiment: sentimentResult,
-                  score: scoringResult,
-                }, file);
-                alert('Meeting saved!');
-              } catch (err) {
-                alert('Error saving meeting: ' + (err.message || JSON.stringify(err)));
-              }
-            }}
-          >
-            Save Meeting
-          </button>
-        )}
-
         <button
           onClick={() => {
             let ts = null;
@@ -1068,7 +1226,7 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
                 }
                 // If not recording, save immediately
                 try {
-                  await saveNoteForUser(user, noteInput, audioFileName, ts);
+                  await saveNoteForUser(user, noteInput, audioFileName, ts, meetingId);
                   alert('Notes saved!');
                   setShowNotes(false);
                   setNoteInput('');
@@ -1101,6 +1259,23 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
               )}
               <div className="text-lg whitespace-pre-line">{selectedNote.content}</div>
             </div>
+          </div>
+        )}
+
+        {/* Display meeting notes section */}
+        {meetingNotes.length > 0 && (
+          <div className="mt-6 bg-gray-50 p-4 border rounded">
+            <h2 className="text-xl font-semibold mb-2">Meeting Notes</h2>
+            <ul>
+              {meetingNotes.map((note, idx) => (
+                <li key={note.id || idx} className="mb-2">
+                  <span className="text-xs text-gray-500 mr-2">
+                    {typeof note.timestamp === 'number' && !isNaN(note.timestamp) ? `${note.timestamp.toFixed(1)}s:` : ''}
+                  </span>
+                  <span>{note.content}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </div>

@@ -1,4 +1,22 @@
+import React, { useEffect, useState } from 'react';
+import { supabase } from '../supabaseClient';
+
 export default function MeetingDetail({ meeting, onBack, onDelete }) {
+  const [meetingNotes, setMeetingNotes] = useState([]);
+
+  useEffect(() => {
+    async function fetchNotes() {
+      if (!meeting?.id) return;
+      const { data, error } = await supabase
+        .from('notes')
+        .select('*')
+        .eq('meeting_id', meeting.id)
+        .order('timestamp', { ascending: true });
+      if (!error) setMeetingNotes(data || []);
+    }
+    fetchNotes();
+  }, [meeting?.id]);
+
   if (!meeting) return null;
   return (
     <div className="p-6 relative">
@@ -36,7 +54,21 @@ export default function MeetingDetail({ meeting, onBack, onDelete }) {
       </div>
       <div className="mb-2"><strong>Sentiment:</strong> {meeting.sentiment}</div>
       <div className="mb-2"><strong>Score:</strong> {meeting.score}</div>
-      
+      {meetingNotes.length > 0 && (
+        <div className="mt-6 bg-gray-50 p-4 border rounded">
+          <h2 className="text-xl font-semibold mb-2">Meeting Notes</h2>
+          <ul>
+            {meetingNotes.map((note, idx) => (
+              <li key={note.id || idx} className="mb-2">
+                <span className="text-xs text-gray-500 mr-2">
+                  {typeof note.timestamp === 'number' && !isNaN(note.timestamp) ? `${note.timestamp.toFixed(1)}s:` : ''}
+                </span>
+                <span>{note.content}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 } 
