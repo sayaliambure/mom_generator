@@ -19,11 +19,13 @@ CORS(app)
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
+PROCESSED_UPLOAD_FOLDER = 'processed_uploads'
 OUTPUT_FOLDER = 'outputs'
 LIVE_TRANSCRIPT_FOLDER = 'live_transcripts'
 LIVE_RECORDED_MEET_FOLDER = 'live_recorded_meet_audio'
 VOICE_SAMPLES = 'voice_samples'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(PROCESSED_UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 os.makedirs(LIVE_TRANSCRIPT_FOLDER, exist_ok=True)
 os.makedirs(LIVE_RECORDED_MEET_FOLDER, exist_ok=True)
