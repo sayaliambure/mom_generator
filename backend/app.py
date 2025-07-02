@@ -3,7 +3,7 @@ import os, uuid
 import soundfile as sf
 from werkzeug.utils import secure_filename
 import threading
-from transcript_gen import generate_transcript_faster_whisper, diarize_and_transcribe, speaker_rec_and_transcribe
+from transcript_gen import diarize_and_transcribe, speaker_rec_and_transcribe
 from llm_generate import query_nvidia_model, query_nvidia_scoring_model
 from custom_transcriber import CustomTranscriber
 from datetime import datetime
@@ -103,32 +103,32 @@ def transcribe():
 
 
 # using faster-whisper model
-@app.route('/faster-whisper', methods=['POST'])
-def faster_whisper():
-    print('upload/faster-whisper route called')
-    if 'file' not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"error": "No file selected"}), 400
+# @app.route('/faster-whisper', methods=['POST'])
+# def faster_whisper():
+#     print('upload/faster-whisper route called')
+#     if 'file' not in request.files:
+#         return jsonify({"error": "No file uploaded"}), 400
+#     file = request.files['file']
+#     if file.filename == '':
+#         return jsonify({"error": "No file selected"}), 400
 
-    filename = secure_filename(file.filename)
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(filepath)
-    print('file saved successfully')
+#     filename = secure_filename(file.filename)
+#     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+#     file.save(filepath)
+#     print('file saved successfully')
 
-    # Generate transcript using faster-whisper
-    print('faster-whisper transcript being generated...')
-    transcript, transcription_time = generate_transcript_faster_whisper(filepath)
-    print('generated faster-whisper transcript !!')
+#     # Generate transcript using faster-whisper
+#     print('faster-whisper transcript being generated...')
+#     transcript, transcription_time = generate_transcript_faster_whisper(filepath)
+#     print('generated faster-whisper transcript !!')
 
-    # Save transcript to file
-    transcript_filename = f"faster_whisper_transcript_{uuid.uuid4()}.txt"
-    transcript_filepath = os.path.join(OUTPUT_FOLDER, transcript_filename)
-    with open(transcript_filepath, 'w', encoding='utf-8') as f:
-        f.write(transcript)
-    print("written and saved faster-whisper transcript file")
-    return jsonify({"transcript": transcript, "transcript_file": transcript_filename, "model": "faster-whisper", "transcription time": transcription_time})
+#     # Save transcript to file
+#     transcript_filename = f"faster_whisper_transcript_{uuid.uuid4()}.txt"
+#     transcript_filepath = os.path.join(OUTPUT_FOLDER, transcript_filename)
+#     with open(transcript_filepath, 'w', encoding='utf-8') as f:
+#         f.write(transcript)
+#     print("written and saved faster-whisper transcript file")
+#     return jsonify({"transcript": transcript, "transcript_file": transcript_filename, "model": "faster-whisper", "transcription time": transcription_time})
 
 
 @app.route('/summarize', methods=['POST'])
