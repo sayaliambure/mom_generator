@@ -28,7 +28,7 @@ const Chat = () => {
       setChat(current => [
         ...current,
         { role: 'bot', text: botMessage },
-        ...(sources ? [{ role: 'bot', text: `🔍 **Sources**:\n\n${sources}` }] : [])
+        ...(sources ? [{ role: 'bot', text: `🔍 Sources:\n\n${sources}` }] : [])
       ]);
     } catch (err) {
       setChat(current => [...current, { role: 'bot', text: 'Failed to get answer from server.' }]);
@@ -59,7 +59,7 @@ const Chat = () => {
 
   return (
     <div className="min-h-screen flex flex-col items-center bg-gray-50 py-8">
-      <div className="w-full max-w-xl bg-white rounded shadow p-6 flex flex-col">
+      <div className="w-full max-w-5xl h-[90vh] bg-white rounded shadow p-8 flex flex-col">
         <h2 className="text-2xl font-bold mb-4 text-center">Chat with Meeting Data</h2>
         <button
           onClick={handleLoadMeetingData}
@@ -68,13 +68,13 @@ const Chat = () => {
         >
           Load Meeting Data
         </button>
-        <div className="flex-1 overflow-y-auto mb-4 border rounded p-2 bg-gray-100" style={{ minHeight: 200, maxHeight: 300 }}>
+        <div className="flex-1 overflow-y-auto mb-6 border rounded p-4 bg-gray-100" style={{ minHeight: 400, maxHeight: '60vh' }}>
           {chat.length === 0 ? (
             <div className="text-gray-400 text-center">No messages yet.</div>
           ) : (
             chat.map((msg, idx) => (
               <div key={idx} className={`mb-2 flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`whitespace-pre-wrap px-3 py-2 rounded-lg max-w-xs ${msg.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900'}`}>
+                <div className={`whitespace-pre-wrap px-3 py-2 rounded-lg max-w-2xl ${msg.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900'}`}>
                   {msg.text}
                 </div>
               </div>
@@ -82,19 +82,20 @@ const Chat = () => {
           )}
           {loading && <div className="text-gray-400 text-center">Bot is typing...</div>}
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 w-full">
           <input
             type="text"
-            className="flex-1 border rounded p-2"
+            className="flex-1 border rounded p-3 text-lg"
             placeholder="Type your question..."
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSend(); }}
             disabled={loading}
+            style={{ minWidth: 0 }}
           />
           <button
             onClick={handleSend}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            className="px-6 py-3 bg-blue-600 text-white rounded hover:bg-blue-700 text-lg"
             disabled={loading || !input.trim()}
           >
             Send

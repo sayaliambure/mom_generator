@@ -11,42 +11,61 @@ url = os.getenv("SUPABASE_URL")
 key = os.getenv("SUPABASE_ANON_KEY")
 groq_api_key = os.getenv("GROQ_API_KEY")
 
-# Initialize Supabase client
-supabase = create_client(url, key)
-
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
 # Load data, chunk, embed, store into FAISS + Pickle
 def build_meeting_index():
+    # Initialize Supabase client
+    supabase = create_client(url, key)
+
     # Fetch meetings and notes
     meetings_data = supabase.table("meetings").select("id, title, transcript, date").execute().data
     notes_data = supabase.table("notes").select("id, content, meeting_id, timestamp").execute().data
 
+    # Group notes by meeting_id
+    notes_by_meeting = {}
+    for note in notes_data:
+        meeting_id = note["meeting_id"]
+        if meeting_id not in notes_by_meeting:
+            notes_by_meeting[meeting_id] = []
+        notes_by_meeting[meeting_id].append(note)
+
     documents = []
 
+    # Build structured meeting documents
     for m in meetings_data:
+        meeting_id = m["id"]
+        metadata_base = {
+            "meeting_id": meeting_id,
+            "title": m["title"],
+            "date": m["date"]
+        }
+
+        # Add transcript as document
         if m["transcript"]:
             documents.append({
                 "text": m["transcript"],
                 "metadata": {
-                    "type": "transcript",
-                    "meeting_id": m["id"],
-                    "title": m["title"],
-                    "date": m["date"]
+                    **metadata_base,
+                    "type": "transcript"
                 }
             })
 
-    for n in notes_data:
-        if n["content"]:
-            documents.append({
-                "text": n["content"],
-                "metadata": {
-                    "type": "note",
-                    "meeting_id": n["meeting_id"],
-                    "note_id": n["id"],
-                    "timestamp": n["timestamp"]
-                }
-            })
+        # Add notes as documents under the same meeting
+        meeting_notes = notes_by_meeting.get(meeting_id, [])
+        for note in meeting_notes:
+            if note["content"]:
+                documents.append({
+                    "text": note["content"],
+                    "metadata": {
+                        **metadata_base,
+                        "type": "note",
+                        "note_id": note["id"],
+                        "timestamp": note["timestamp"]
+                    }
+                })
+
+    print(f"Prepared {len(documents)} documents for embedding.")
 
     # Split into chunks
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
@@ -55,7 +74,9 @@ def build_meeting_index():
         chunks = splitter.create_documents([doc["text"]], metadatas=[doc["metadata"]])
         chunked_docs.extend(chunks)
 
-    # Embed chunks
+    print(f"Split into {len(chunked_docs)} chunks.")
+
+    # Embed
     texts = [doc.page_content for doc in chunked_docs]
     embeddings = embedding_model.encode(texts, convert_to_numpy=True)
 
@@ -64,12 +85,12 @@ def build_meeting_index():
     index = faiss.IndexFlatL2(dimension)
     index.add(np.array(embeddings))
 
-    # Save FAISS index and metadata
+    # Save index and metadata
     faiss.write_index(index, "meeting_index.faiss")
     with open("metadata.pkl", "wb") as f:
         pickle.dump(chunked_docs, f)
 
-    print("Indexing complete. Data saved to disk.")
+    print("Indexing complete. FAISS + metadata saved to disk.")
 
 
 # Query index, do RAG, return answer
@@ -81,6 +102,7 @@ def query_meeting_qa(user_query):
         metadata_store = pickle.load(f)
 
     # Embed query
+    print('User quesry: ', user_query)
     query_vector = embedding_model.encode([user_query])
     D, I = index.search(np.array(query_vector).astype("float32"), k=5)
 
