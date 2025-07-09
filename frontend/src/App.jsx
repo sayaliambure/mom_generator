@@ -4,6 +4,8 @@ import AuthForm from './components/AuthForm';
 import UserProfile from './components/UserProfile';
 import MeetingDetail from './components/MeetingDetail';
 import MeetingMinutesGenerator from './components/MeetingMinutesGenerator';
+import Chat from './components/Chat';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 function NoteDetail({ note, onBack }) {
   if (!note) return null;
@@ -66,20 +68,27 @@ function App() {
   }
 
   return (
-    <>
-      <div style={{ display: showProfile ? 'none' : 'block' }}>
-        <MeetingMinutesGenerator onViewProfile={() => setShowProfile(true)} user={session.user} />
-      </div>
-      <div style={{ display: showProfile ? 'block' : 'none' }}>
-        {selectedNote ? (
-          <NoteDetail note={selectedNote} onBack={() => setSelectedNote(null)} />
-        ) : selectedMeeting ? (
-          <MeetingDetail meeting={selectedMeeting} onBack={() => setSelectedMeeting(null)} user={session.user} onDelete={handleDeleteMeeting} />
-        ) : (
-          <UserProfile user={session.user} onSelectMeeting={setSelectedMeeting} onSelectNote={setSelectedNote} onBack={() => setShowProfile(false)} />
-        )}
-      </div>
-    </>
+    <Router>
+      <Routes>
+        <Route path="/" element={
+          <>
+            <div style={{ display: showProfile ? 'none' : 'block' }}>
+              <MeetingMinutesGenerator onViewProfile={() => setShowProfile(true)} user={session.user} />
+            </div>
+            <div style={{ display: showProfile ? 'block' : 'none' }}>
+              {selectedNote ? (
+                <NoteDetail note={selectedNote} onBack={() => setSelectedNote(null)} />
+              ) : selectedMeeting ? (
+                <MeetingDetail meeting={selectedMeeting} onBack={() => setSelectedMeeting(null)} user={session.user} onDelete={handleDeleteMeeting} />
+              ) : (
+                <UserProfile user={session.user} onSelectMeeting={setSelectedMeeting} onSelectNote={setSelectedNote} onBack={() => setShowProfile(false)} />
+              )}
+            </div>
+          </>
+        } />
+        <Route path="/chat" element={<Chat />} />
+      </Routes>
+    </Router>
   );
 }
 

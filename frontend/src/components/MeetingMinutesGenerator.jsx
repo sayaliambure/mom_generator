@@ -7,6 +7,7 @@ import { saveMeetingForUser } from '../utils/saveMeetingForUser';
 import { saveNoteForUser } from '../utils/saveNoteForUser';
 import jsPDF from 'jspdf';
 import { uploadAudioFile } from '../utils/uploadAudioToSupabase';
+import { useNavigate } from 'react-router-dom';
 
 const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
   const [mode, setMode] = useState(""); // "upload" or "record"
@@ -64,6 +65,8 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
   const [meetingId, setMeetingId] = useState(null);
 
   const [meetingNotes, setMeetingNotes] = useState([]);
+
+  const navigate = useNavigate();
 
   useEffect(() => {
     let interval;
@@ -1456,6 +1459,17 @@ const MeetingMinutesGenerator = ({ onViewProfile, user }) => {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 4h6m-3 0v16M4 6h16M4 10h16M4 14h16M4 18h16" />
           </svg>
           Take Notes
+        </button>
+
+        {/* Add Chat button above Take Notes button */}
+        <button
+          onClick={() => navigate('/chat')}
+          className="fixed bottom-24 right-10 bg-green-600 text-white p-3 rounded-full shadow-lg hover:bg-green-700 flex items-center gap-2 z-50"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8s-9-3.582-9-8 4.03-8 9-8 9 3.582 9 8z" />
+          </svg>
+          Chat
         </button>
 
         {showNotes && (
