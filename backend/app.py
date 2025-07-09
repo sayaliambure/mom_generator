@@ -5,6 +5,7 @@ from werkzeug.utils import secure_filename
 import threading
 from transcript_gen import diarize_and_transcribe, speaker_rec_and_transcribe
 from llm_generate import query_nvidia_model, query_nvidia_scoring_model
+from chat import build_meeting_index, query_meeting_qa
 from custom_transcriber import CustomTranscriber
 from datetime import datetime
 from flask_cors import CORS
@@ -367,6 +368,32 @@ def get_transcript_file():
     if os.path.exists(LIVE_TRANSCRIPT_FOLDER):
         return send_file(LIVE_TRANSCRIPT_FOLDER, mimetype='text/plain', as_attachment=False)
     return jsonify({"message": "Transcript file not found."}), 404
+
+
+
+@app.route('/build-index', methods=['POST'])
+def build_index_route():
+    try:
+        build_meeting_index()
+        return jsonify({"status": "success"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/query', methods=['POST'])
+def query_route():
+    try:
+        body = request.get_json()
+        user_query = body.get("query", "")
+        if not user_query:
+            return jsonify({"error": "Query is required"}), 400
+
+        result = query_meeting_qa(user_query)
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

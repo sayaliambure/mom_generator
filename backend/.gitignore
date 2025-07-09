@@ -10,3 +10,5 @@ compare.txt
 testing_functions.py
 /__pycache__
 .env
+meeting_index.faiss
+metadata.pkl

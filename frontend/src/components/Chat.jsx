@@ -7,18 +7,54 @@ const Chat = () => {
 
   const handleSend = async () => {
     if (!input.trim()) return;
-    setChat([...chat, { role: 'user', text: input }]);
+
+    setChat(prev => [...prev, { role: 'user', text: input }]);
     setLoading(true);
-    // Simulate bot response (replace with real API call)
-    setTimeout(() => {
-      setChat(current => [...current, { role: 'bot', text: `Echo: ${input}` }]);
-      setLoading(false);
-    }, 800);
+
+    try {
+      const res = await fetch('http://127.0.0.1:5000/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: input })
+      });
+
+      const data = await res.json();
+
+      const botMessage = data.answer;
+      const sources = data.sources.map(src => 
+        `📎 ${src.title || 'Untitled'} (Meeting ID: ${src.meeting_id})\n${src.snippet}`
+      ).join('\n\n');
+
+      setChat(current => [
+        ...current,
+        { role: 'bot', text: botMessage },
+        ...(sources ? [{ role: 'bot', text: `🔍 **Sources**:\n\n${sources}` }] : [])
+      ]);
+    } catch (err) {
+      setChat(current => [...current, { role: 'bot', text: 'Failed to get answer from server.' }]);
+    }
+
+    setLoading(false);
     setInput('');
   };
 
-  const handleLoadMeetingData = () => {
-    setChat(current => [...current, { role: 'bot', text: 'Meeting data loaded (placeholder).' }]);
+  const handleLoadMeetingData = async () => {
+    setLoading(true);
+    setChat(current => [...current, { role: 'bot', text: 'Loading and indexing meeting data...' }]);
+
+    try {
+      const res = await fetch('http://127.0.0.1:5000/build-index', { method: 'POST' });
+
+      if (res.ok) {
+        setChat(current => [...current, { role: 'bot', text: 'Meeting data successfully loaded and indexed.' }]);
+      } else {
+        throw new Error();
+      }
+    } catch (err) {
+      setChat(current => [...current, { role: 'bot', text: 'Failed to load meeting data.' }]);
+    }
+
+    setLoading(false);
   };
 
   return (
@@ -28,6 +64,7 @@ const Chat = () => {
         <button
           onClick={handleLoadMeetingData}
           className="mb-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 self-center"
+          disabled={loading}
         >
           Load Meeting Data
         </button>
@@ -37,7 +74,7 @@ const Chat = () => {
           ) : (
             chat.map((msg, idx) => (
               <div key={idx} className={`mb-2 flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`px-3 py-2 rounded-lg max-w-xs ${msg.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900'}`}>
+                <div className={`whitespace-pre-wrap px-3 py-2 rounded-lg max-w-xs ${msg.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900'}`}>
                   {msg.text}
                 </div>
               </div>
@@ -68,4 +105,4 @@ const Chat = () => {
   );
 };
 
-export default Chat; 
+export default Chat;
