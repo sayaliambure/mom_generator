@@ -2,6 +2,7 @@
 
 This project aims to streamline the process of generating meeting minutes, summaries, and action items using advanced AI capabilities for transcription, speaker diarization, and natural language understanding.
 
+Demo of the tool: <a href="https://drive.google.com/file/d/1hUyOhKw8d1NFfpTopcAHwGljV5luYlC3/view?usp=drive_link" target="_blank"> View here </a> <br>
 ## Features
 
 ### 1. Meeting Audio Handling
@@ -51,6 +52,13 @@ Integrated note-taking functionality powered by Supabase and React:
 * Saved to DB.
 * View in profile section.
 
+#### 6. RAG (Retrieval-Augmented Generation)
+Enhance your interaction with meeting data through RAG capabilities:
+* **Ask Questions and Converse with Meeting Data:** Pose queries and engage in conversations based on the meeting's content.
+* **See Sources of the Answer:** Trace back the origin of information provided, linking answers to specific parts of the meeting data.
+* **Input Document:** Utilizes existing meeting transcripts and other relevant parameters for RAG queries.
+
+
 ## Technologies Used
 * **Backend:** Flask (APIs)
 * **Frontend:** React
@@ -59,5 +67,6 @@ Integrated note-taking functionality powered by Supabase and React:
 * **Speaker Diarization:** `pyannote`
 * **Speaker Recognition:** `resemblyzer`
 * **Content Generation (Summary, Action Items, etc.):** Llama-4-scout-17b-instruct model
-
+* **Vector Database:** Faiss
+  
 ---
